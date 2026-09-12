@@ -48,6 +48,7 @@ export default function InventoryScreen() {
     const [isSourcePickerOpen, setIsSourcePickerOpen] = useState(false);
     const [previewUri, setPreviewUri] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [draftProductId, setDraftProductId] = useState<string | null>(null);
     const [originalImagePath, setOriginalImagePath] = useState<string | null>(null);
     const [form, setForm] = useState<ProductFormState>(emptyForm);
 
@@ -55,6 +56,7 @@ export default function InventoryScreen() {
         try {
             const rows = await listProducts(db);
             setProducts(rows);
+            console.log("rows", rows)
         } catch (error) {
             console.warn("No se pudieron cargar los productos:", error);
         } finally {
@@ -86,7 +88,10 @@ export default function InventoryScreen() {
     }, [db]);
 
     const openCreateForm = () => {
+        const productId = createId("product");
+
         setEditingId(null);
+        setDraftProductId(productId);
         setOriginalImagePath(null);
         setForm(emptyForm);
         setIsFormOpen(true);
@@ -94,6 +99,7 @@ export default function InventoryScreen() {
 
     const openEditForm = (product: ProductRow) => {
         setEditingId(product.id);
+        setDraftProductId(product.id);
         setOriginalImagePath(product.image_path);
         setForm({
             name: product.name,
@@ -108,9 +114,36 @@ export default function InventoryScreen() {
 
     const closeForm = () => {
         setEditingId(null);
+        setDraftProductId(null);
         setOriginalImagePath(null);
         setForm(emptyForm);
         setIsFormOpen(false);
+    };
+
+    const persistFormImage = async (sourceUri: string) => {
+        const productId = draftProductId ?? editingId ?? createId("product");
+        const previousImage = form.image_uri;
+        const nextImage = await persistProductImage(sourceUri, productId);
+
+        if (
+            previousImage &&
+            previousImage !== originalImagePath &&
+            previousImage !== nextImage
+        ) {
+            await deleteProductImage(previousImage);
+        }
+
+        setForm((prev) => ({ ...prev, image_uri: nextImage }));
+    };
+
+    const removeFormImage = async () => {
+        const currentImage = form.image_uri;
+
+        setForm((prev) => ({ ...prev, image_uri: null }));
+
+        if (currentImage && currentImage !== originalImagePath) {
+            await deleteProductImage(currentImage);
+        }
     };
 
     const openImagePicker = () => {
@@ -138,7 +171,7 @@ export default function InventoryScreen() {
         });
 
         if (!result.canceled) {
-            setForm((prev) => ({ ...prev, image_uri: result.assets[0].uri }));
+            await persistFormImage(result.assets[0].uri);
         }
     };
 
@@ -152,7 +185,7 @@ export default function InventoryScreen() {
         });
 
         if (!result.canceled) {
-            setForm((prev) => ({ ...prev, image_uri: result.assets[0].uri }));
+            await persistFormImage(result.assets[0].uri);
         }
     };
 
@@ -170,18 +203,15 @@ export default function InventoryScreen() {
         }
 
         try {
-            const productId = editingId ?? createId("product");
+            const productId = draftProductId ?? editingId ?? createId("product");
             let imagePath: string | null = null;
 
             if (form.image_uri) {
-                imagePath =
-                    form.image_uri === originalImagePath
-                        ? form.image_uri
-                        : await persistProductImage(form.image_uri, productId);
+                imagePath = form.image_uri;
             }
 
             if (originalImagePath && originalImagePath !== imagePath) {
-                deleteProductImage(originalImagePath);
+                await deleteProductImage(originalImagePath);
             }
 
             if (editingId) {
@@ -215,6 +245,8 @@ export default function InventoryScreen() {
         }
     };
 
+
+    console.log("Form", form)
     return (
         <View className="flex-1 px-5 pt-6 pb-[90px] bg-background">
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
@@ -276,7 +308,12 @@ export default function InventoryScreen() {
                                     >
                                         <Image
                                             source={{ uri: product.image_path }}
-                                            className="w-14 h-14 rounded-2xl bg-border"
+                                            style={{
+                                                width: 56,
+                                                height: 56,
+                                                borderRadius: 16,
+                                                backgroundColor: palette.border,
+                                            }}
                                             contentFit="cover"
                                             transition={150}
                                         />
@@ -358,7 +395,11 @@ export default function InventoryScreen() {
                                     {form.image_uri ? (
                                         <Image
                                             source={{ uri: form.image_uri }}
-                                            className="w-full h-48 bg-border"
+                                            style={{
+                                                width: "100%",
+                                                height: 192,
+                                                backgroundColor: palette.border,
+                                            }}
                                             contentFit="cover"
                                             transition={200}
                                         />
@@ -381,7 +422,9 @@ export default function InventoryScreen() {
                                             <Text className="text-chip uppercase text-accent">Cambiar</Text>
                                         </Pressable>
                                         <Pressable
-                                            onPress={() => setForm((prev) => ({ ...prev, image_uri: null }))}
+                                            onPress={() => {
+                                                void removeFormImage();
+                                            }}
                                             className="flex-1 rounded-xl py-3 items-center bg-danger/12"
                                             style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
                                         >
@@ -509,7 +552,13 @@ export default function InventoryScreen() {
                     {previewUri ? (
                         <Image
                             source={{ uri: previewUri }}
-                            className="w-[86%] max-w-[420px] aspect-square rounded-3xl bg-border"
+                            style={{
+                                width: "86%",
+                                maxWidth: 420,
+                                aspectRatio: 1,
+                                borderRadius: 24,
+                                backgroundColor: palette.border,
+                            }}
                             contentFit="cover"
                             transition={200}
                         />

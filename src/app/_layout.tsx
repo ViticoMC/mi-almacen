@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DatabaseProvider } from "../database";
 import "../global.css";
 

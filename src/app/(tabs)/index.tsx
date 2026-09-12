@@ -55,7 +55,6 @@ export default function Index() {
                 if (!isMounted) {
                     return;
                 }
-                console.log(summary, "summary")
                 setMetrics(summary);
                 setRecentMovements(movements);
             } catch (error) {

@@ -3,10 +3,6 @@ import { Platform } from "react-native";
 
 const IMAGES_DIRECTORY_NAME = "product-images";
 
-function getImagesDirectory(): Directory {
-  return new Directory(Paths.document, IMAGES_DIRECTORY_NAME);
-}
-
 async function webUriToDataUrl(sourceUri: string): Promise<string> {
   const response = await fetch(sourceUri);
 
@@ -27,6 +23,16 @@ async function webUriToDataUrl(sourceUri: string): Promise<string> {
   });
 }
 
+async function getImagesDirectory(): Promise<Directory> {
+  const directory = new Directory(Paths.document, IMAGES_DIRECTORY_NAME);
+
+  if (!directory.exists) {
+    directory.create({ intermediates: true });
+  }
+
+  return directory;
+}
+
 export async function persistProductImage(
   sourceUri: string,
   productId: string,
@@ -34,10 +40,9 @@ export async function persistProductImage(
   if (Platform.OS === "web") {
     return webUriToDataUrl(sourceUri);
   }
+  console.log("source uri", sourceUri);
 
-  const directory = getImagesDirectory();
-  directory.create({ intermediates: true, idempotent: true });
-
+  const directory = await getImagesDirectory();
   const source = new File(sourceUri);
   const extension = source.extension || ".jpg";
   const destination = new File(
@@ -50,7 +55,9 @@ export async function persistProductImage(
   return destination.uri;
 }
 
-export function deleteProductImage(path: string | null | undefined) {
+export async function deleteProductImage(
+  path: string | null | undefined,
+): Promise<void> {
   if (!path || Platform.OS === "web") {
     return;
   }
@@ -59,7 +66,7 @@ export function deleteProductImage(path: string | null | undefined) {
     const file = new File(path);
 
     if (file.exists) {
-      file.delete();
+      await file.delete();
     }
   } catch {
     // La ruta puede apuntar a un archivo que ya no existe: se ignora.
