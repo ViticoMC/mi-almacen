@@ -56,6 +56,27 @@ export type SaleDraft = {
   items: SaleItemDraft[];
 };
 
+export type MovementFilter = "ALL" | "IN" | "OUT" | "ADJUSTMENTS";
+
+export type InventoryMovementDetailedRow = InventoryMovementRow & {
+  product_name: string;
+};
+
+export type ManualMovementType =
+  | "IN"
+  | "OUT"
+  | "ADJUSTMENT_IN"
+  | "ADJUSTMENT_OUT";
+
+export type ManualMovementDraft = {
+  product_id: string;
+  movement_type: ManualMovementType;
+  quantity: number;
+  unit_cost?: number | null;
+  movement_date?: string;
+  notes?: string | null;
+};
+
 export async function getDashboardSummary(
   db: SQLiteDatabase,
 ): Promise<DashboardSummary> {
@@ -128,6 +149,232 @@ export async function listRecentMovements(
     `SELECT * FROM inventory_movements ORDER BY movement_date DESC, created_at DESC LIMIT $limit`,
     { $limit: limit },
   );
+}
+
+export async function listMovementsDetailed(
+  db: SQLiteDatabase,
+  options?: {
+    limit?: number;
+    filter?: MovementFilter;
+  },
+): Promise<InventoryMovementDetailedRow[]> {
+  const limit = options?.limit ?? 120;
+  const filter = options?.filter ?? "ALL";
+
+  let whereClause = "";
+
+  if (filter === "IN") {
+    whereClause = "WHERE m.movement_type IN ('IN', 'ADJUSTMENT_IN')";
+  } else if (filter === "OUT") {
+    whereClause = "WHERE m.movement_type IN ('OUT', 'ADJUSTMENT_OUT')";
+  } else if (filter === "ADJUSTMENTS") {
+    whereClause =
+      "WHERE m.movement_type IN ('ADJUSTMENT_IN', 'ADJUSTMENT_OUT')";
+  }
+
+  return db.getAllAsync<InventoryMovementDetailedRow>(
+    `
+      SELECT
+        m.id,
+        m.product_id,
+        p.name AS product_name,
+        m.movement_type,
+        m.quantity,
+        m.unit_cost,
+        m.reference_type,
+        m.reference_id,
+        m.movement_date,
+        m.notes,
+        m.created_at
+      FROM inventory_movements m
+      INNER JOIN products p ON p.id = m.product_id
+      ${whereClause}
+      ORDER BY m.movement_date DESC, m.created_at DESC
+      LIMIT $limit
+    `,
+    { $limit: limit },
+  );
+}
+
+export async function createManualInventoryMovement(
+  db: SQLiteDatabase,
+  input: ManualMovementDraft,
+) {
+  const quantity = Number(input.quantity || 0);
+
+  if (quantity <= 0) {
+    throw new Error("La cantidad debe ser mayor a cero.");
+  }
+
+  const product = await getProductById(db, input.product_id);
+
+  if (!product) {
+    throw new Error("No se encontro el producto seleccionado.");
+  }
+
+  const createdAt = nowIso();
+  const movementDate = input.movement_date ?? createdAt;
+  const movementType = input.movement_type;
+  const isIncoming = movementType === "IN" || movementType === "ADJUSTMENT_IN";
+  const isOutgoing =
+    movementType === "OUT" || movementType === "ADJUSTMENT_OUT";
+  const isAdjustment =
+    movementType === "ADJUSTMENT_IN" || movementType === "ADJUSTMENT_OUT";
+  const currentStock = Number(product.current_stock || 0);
+
+  if (isOutgoing && quantity > currentStock) {
+    throw new Error(`Stock insuficiente para ${product.name}.`);
+  }
+
+  const nextStock = isIncoming
+    ? currentStock + quantity
+    : isOutgoing
+      ? currentStock - quantity
+      : currentStock;
+  const inputUnitCost = input.unit_cost ?? null;
+  const unitCost =
+    inputUnitCost === null || Number(inputUnitCost) < 0
+      ? null
+      : Number(inputUnitCost);
+
+  let nextAverageCost = Number(product.average_cost || 0);
+  let nextLastCost = Number(product.last_cost || 0);
+
+  if (isIncoming && unitCost !== null) {
+    const weightedCost = nextAverageCost * currentStock;
+    nextAverageCost =
+      nextStock === 0 ? 0 : (weightedCost + unitCost * quantity) / nextStock;
+    nextLastCost = unitCost;
+  }
+
+  const referenceType = isAdjustment ? "ADJUSTMENT" : "MANUAL";
+  const referenceId = isAdjustment
+    ? createId("adjustment")
+    : createId("manual-movement");
+
+  await db.withTransactionAsync(async () => {
+    if (isAdjustment) {
+      await db.runAsync(
+        `
+          INSERT INTO inventory_adjustments (
+            id,
+            adjustment_date,
+            reason,
+            created_at
+          ) VALUES (
+            $id,
+            $adjustment_date,
+            $reason,
+            $created_at
+          )
+        `,
+        {
+          $id: referenceId,
+          $adjustment_date: movementDate,
+          $reason: input.notes ?? "Ajuste manual",
+          $created_at: createdAt,
+        },
+      );
+
+      await db.runAsync(
+        `
+          INSERT INTO inventory_adjustment_items (
+            id,
+            adjustment_id,
+            product_id,
+            expected_quantity,
+            actual_quantity,
+            difference_quantity
+          ) VALUES (
+            $id,
+            $adjustment_id,
+            $product_id,
+            $expected_quantity,
+            $actual_quantity,
+            $difference_quantity
+          )
+        `,
+        {
+          $id: createId("adjustment-item"),
+          $adjustment_id: referenceId,
+          $product_id: input.product_id,
+          $expected_quantity: currentStock,
+          $actual_quantity: nextStock,
+          $difference_quantity: isIncoming ? quantity : -quantity,
+        },
+      );
+    }
+
+    await db.runAsync(
+      `
+        UPDATE products SET
+          current_stock = $current_stock,
+          average_cost = $average_cost,
+          last_cost = $last_cost,
+          updated_at = $updated_at
+        WHERE id = $id
+      `,
+      {
+        $id: input.product_id,
+        $current_stock: nextStock,
+        $average_cost: nextAverageCost,
+        $last_cost: nextLastCost,
+        $updated_at: nowIso(),
+      },
+    );
+
+    await db.runAsync(
+      `
+        INSERT INTO inventory_movements (
+          id,
+          product_id,
+          movement_type,
+          quantity,
+          unit_cost,
+          reference_type,
+          reference_id,
+          movement_date,
+          notes,
+          created_at
+        ) VALUES (
+          $id,
+          $product_id,
+          $movement_type,
+          $quantity,
+          $unit_cost,
+          $reference_type,
+          $reference_id,
+          $movement_date,
+          $notes,
+          $created_at
+        )
+      `,
+      {
+        $id: createId("movement"),
+        $product_id: input.product_id,
+        $movement_type: movementType,
+        $quantity: quantity,
+        $unit_cost: unitCost,
+        $reference_type: referenceType,
+        $reference_id: referenceId,
+        $movement_date: movementDate,
+        $notes: input.notes ?? null,
+        $created_at: createdAt,
+      },
+    );
+  });
+
+  return {
+    product_id: input.product_id,
+    movement_type: movementType,
+    quantity,
+    unit_cost: unitCost,
+    reference_type: referenceType,
+    reference_id: referenceId,
+    movement_date: movementDate,
+    notes: input.notes ?? null,
+    created_at: createdAt,
+  };
 }
 
 export async function createPurchase(db: SQLiteDatabase, input: PurchaseDraft) {

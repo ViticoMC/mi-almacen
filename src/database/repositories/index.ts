@@ -1,10 +1,16 @@
 export {
+  createManualInventoryMovement,
   createPurchase,
   createSale,
   getDashboardSummary,
   listLowStockProducts,
+  listMovementsDetailed,
   listRecentMovements,
   type DashboardSummary,
+  type InventoryMovementDetailedRow,
+  type ManualMovementDraft,
+  type ManualMovementType,
+  type MovementFilter,
   type PurchaseDraft,
   type SaleDraft,
 } from "./operations/operations.repository";

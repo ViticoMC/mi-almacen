@@ -1,42 +1,25 @@
+import Loading from "@/components/inventory/loading";
+import ModalPreviewImage from "@/components/inventory/modal-preview-image";
+import ProductCard from "@/components/inventory/product-card";
+import ProductForm from "@/components/inventory/product-form";
 import { Colors } from "@/constants/theme";
 import {
-    createProduct,
     listProducts,
-    type ProductRow,
-    updateProduct
+    type ProductRow
 } from "@/database";
-import { createId } from "@/database/utils/ids";
-import {
-    deleteProductImage,
-    persistProductImage,
-} from "@/database/utils/images";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import * as ImagePicker from "expo-image-picker";
 import { useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
-    Modal,
-    Platform,
     Pressable,
     ScrollView,
     Text,
-    TextInput,
     useColorScheme,
-    View,
+    View
 } from "react-native";
 
-const emptyForm = {
-    name: "",
-    description: "",
-    current_stock: "0",
-    average_cost: "0",
-    last_cost: "0",
-    image_uri: null as string | null,
-};
 
-type ProductFormState = typeof emptyForm;
 
 export default function InventoryScreen() {
     const scheme = useColorScheme();
@@ -45,18 +28,14 @@ export default function InventoryScreen() {
     const [products, setProducts] = useState<ProductRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [isFormOpen, setIsFormOpen] = useState(false);
-    const [isSourcePickerOpen, setIsSourcePickerOpen] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
     const [previewUri, setPreviewUri] = useState<string | null>(null);
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [draftProductId, setDraftProductId] = useState<string | null>(null);
-    const [originalImagePath, setOriginalImagePath] = useState<string | null>(null);
-    const [form, setForm] = useState<ProductFormState>(emptyForm);
+
 
     const loadProducts = async () => {
         try {
             const rows = await listProducts(db);
             setProducts(rows);
-            console.log("rows", rows)
         } catch (error) {
             console.warn("No se pudieron cargar los productos:", error);
         } finally {
@@ -88,165 +67,23 @@ export default function InventoryScreen() {
     }, [db]);
 
     const openCreateForm = () => {
-        const productId = createId("product");
-
-        setEditingId(null);
-        setDraftProductId(productId);
-        setOriginalImagePath(null);
-        setForm(emptyForm);
+        setEditingProduct(null);
         setIsFormOpen(true);
     };
 
     const openEditForm = (product: ProductRow) => {
-        setEditingId(product.id);
-        setDraftProductId(product.id);
-        setOriginalImagePath(product.image_path);
-        setForm({
-            name: product.name,
-            description: product.description ?? "",
-            current_stock: String(product.current_stock),
-            average_cost: String(product.average_cost),
-            last_cost: String(product.last_cost),
-            image_uri: product.image_path,
-        });
+        setEditingProduct(product);
         setIsFormOpen(true);
     };
 
     const closeForm = () => {
-        setEditingId(null);
-        setDraftProductId(null);
-        setOriginalImagePath(null);
-        setForm(emptyForm);
+        setEditingProduct(null);
         setIsFormOpen(false);
     };
 
-    const persistFormImage = async (sourceUri: string) => {
-        const productId = draftProductId ?? editingId ?? createId("product");
-        const previousImage = form.image_uri;
-        const nextImage = await persistProductImage(sourceUri, productId);
-
-        if (
-            previousImage &&
-            previousImage !== originalImagePath &&
-            previousImage !== nextImage
-        ) {
-            await deleteProductImage(previousImage);
-        }
-
-        setForm((prev) => ({ ...prev, image_uri: nextImage }));
-    };
-
-    const removeFormImage = async () => {
-        const currentImage = form.image_uri;
-
-        setForm((prev) => ({ ...prev, image_uri: null }));
-
-        if (currentImage && currentImage !== originalImagePath) {
-            await deleteProductImage(currentImage);
-        }
-    };
-
-    const openImagePicker = () => {
-        if (Platform.OS === "web") {
-            pickFromLibrary();
-            return;
-        }
-
-        setIsSourcePickerOpen(true);
-    };
-
-    const takePhoto = async () => {
-        setIsSourcePickerOpen(false);
-        const permission = await ImagePicker.requestCameraPermissionsAsync();
-
-        if (!permission.granted) {
-            return;
-        }
-
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ["images"],
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.7,
-        });
-
-        if (!result.canceled) {
-            await persistFormImage(result.assets[0].uri);
-        }
-    };
-
-    const pickFromLibrary = async () => {
-        setIsSourcePickerOpen(false);
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images"],
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.7,
-        });
-
-        if (!result.canceled) {
-            await persistFormImage(result.assets[0].uri);
-        }
-    };
-
-    const handleSave = async () => {
-        const nextProduct = {
-            name: form.name.trim(),
-            description: form.description.trim() || null,
-            current_stock: Number(form.current_stock) || 0,
-            average_cost: Number(form.average_cost) || 0,
-            last_cost: Number(form.last_cost) || 0,
-        };
-
-        if (!nextProduct.name) {
-            return;
-        }
-
-        try {
-            const productId = draftProductId ?? editingId ?? createId("product");
-            let imagePath: string | null = null;
-
-            if (form.image_uri) {
-                imagePath = form.image_uri;
-            }
-
-            if (originalImagePath && originalImagePath !== imagePath) {
-                await deleteProductImage(originalImagePath);
-            }
-
-            if (editingId) {
-                await updateProduct(db, editingId, {
-                    ...nextProduct,
-                    image_path: imagePath,
-                });
-            } else {
-                await createProduct(db, {
-                    ...nextProduct,
-                    id: productId,
-                    image_path: imagePath,
-                });
-            }
-            await loadProducts();
-            closeForm();
-        } catch (error) {
-            console.warn("No se pudo guardar el producto:", error);
-        }
-    };
-
-    const changueActived = async (productId: string, active: number) => {
-        try {
-            active = active === 0 ? 1 : 2
-            await updateProduct(db, productId, {
-                active
-            });
-            await loadProducts();
-        } catch (error) {
-            console.warn("No se pudo desactivar el producto:", error);
-        }
-    };
 
 
-    console.log("Form", form)
+
     return (
         <View className="flex-1 px-5 pt-6 pb-[90px] bg-background">
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
@@ -265,9 +102,7 @@ export default function InventoryScreen() {
                     style={({ pressed }) => pressed ? { opacity: 0.9 } : undefined}
                 >
                     <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-                    <Text className="text-button-label text-accent">
-                        Nuevo
-                    </Text>
+
                 </Pressable>
             </View>
 
@@ -283,9 +118,7 @@ export default function InventoryScreen() {
             </View>
 
             {loading ? (
-                <View className="rounded-[22px] border p-6 items-center gap-2.5 mt-2 bg-surface border-border">
-                    <Text className="text-button-label text-content">Cargando inventario...</Text>
-                </View>
+                <Loading text="Cargando productos..." />
             ) : products.length === 0 ? (
                 <View className="rounded-[22px] border p-6 items-center gap-2.5 mt-2 bg-surface border-border">
                     <MaterialCommunityIcons name="package-variant-closed" size={28} color={palette.accent} />
@@ -297,277 +130,22 @@ export default function InventoryScreen() {
             ) : (
                 <ScrollView contentContainerClassName="gap-3.5 pb-5" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                     {products.map((product) => (
-                        <View key={product.id} className="rounded-[20px] border p-4 gap-3.5 bg-surface border-border">
-                            <View className="flex-row items-center gap-3">
-                                {product.image_path ? (
-                                    <Pressable
-                                        onPress={() => setPreviewUri(product.image_path)}
-                                        hitSlop={4}
-                                        accessibilityRole="imagebutton"
-                                        accessibilityLabel={`Ver foto de ${product.name}`}
-                                    >
-                                        <Image
-                                            source={{ uri: product.image_path }}
-                                            style={{
-                                                width: 56,
-                                                height: 56,
-                                                borderRadius: 16,
-                                                backgroundColor: palette.border,
-                                            }}
-                                            contentFit="cover"
-                                            transition={150}
-                                        />
-                                    </Pressable>
-                                ) : (
-                                    <View className="w-14 h-14 rounded-2xl items-center justify-center bg-accent-soft">
-                                        <MaterialCommunityIcons name="image-outline" size={22} color={palette.accent} />
-                                    </View>
-                                )}
-                                <View className="flex-1 gap-1">
-                                    <Text className="text-button-label text-content">{product.name}</Text>
-                                    <Text className="text-body-muted text-content-muted">
-                                        {product.description ?? "Sin descripcion"}
-                                    </Text>
-                                </View>
-                                <View className="rounded-full px-2.5 py-1.5 self-start bg-accent-soft">
-                                    <Text className="text-chip uppercase text-accent">
-                                        {Number(product.current_stock || 0)} u.
-                                    </Text>
-                                </View>
-                            </View>
-
-                            <View className="flex-row justify-between gap-2">
-                                <View>
-                                    <Text className="text-body-muted text-content-muted">Costo medio</Text>
-                                    <Text className="text-button-label text-content">${Number(product.average_cost || 0).toFixed(2)}</Text>
-                                </View>
-                                <View>
-                                    <Text className="text-body-muted text-content-muted">Ultimo costo</Text>
-                                    <Text className="text-button-label text-content">${Number(product.last_cost || 0).toFixed(2)}</Text>
-                                </View>
-                            </View>
-
-                            <View className="flex-row gap-3">
-                                <Pressable
-                                    onPress={() => openEditForm(product)}
-                                    hitSlop={8}
-                                    pressRetentionOffset={12}
-                                    className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-accent-soft"
-                                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                >
-                                    <Text className="text-chip uppercase text-accent">Editar</Text>
-                                </Pressable>
-                                <Pressable
-                                    onPress={() => changueActived(product.id, product.active)}
-                                    hitSlop={8}
-                                    pressRetentionOffset={12}
-                                    className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-danger/12"
-                                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                >
-                                    <Text className="text-chip uppercase text-accent">{product.active === 0 ? "Activar" : "Desactivar"}</Text>
-                                </Pressable>
-                            </View>
-                        </View>
+                        <ProductCard key={product.id} product={product} db={db} setPreviewUri={setPreviewUri} openEditForm={openEditForm} palette={palette} loadProducts={loadProducts} />
                     ))}
                 </ScrollView>
             )}
 
-            <Modal transparent visible={isFormOpen} animationType="slide" onRequestClose={closeForm}>
-                <View className="flex-1 justify-end bg-[rgba(15,23,42,0.45)]">
-                    <View className="rounded-t-[28px] border pt-[18px] px-[18px] pb-6 min-h-[70%] bg-surface border-border">
-                        <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-section-title text-content">
-                                {editingId ? "Editar producto" : "Nuevo producto"}
-                            </Text>
-                            <Pressable onPress={closeForm}>
-                                <MaterialCommunityIcons name="close" size={22} color={palette.text} />
-                            </Pressable>
-                        </View>
+            <ProductForm
+                key={isFormOpen ? editingProduct?.id ?? "new" : "closed"}
+                closeForm={closeForm}
+                db={db}
+                isFormOpen={isFormOpen}
+                loadProducts={loadProducts}
+                product={editingProduct}
+                palette={palette}
+            />
 
-                        <ScrollView contentContainerClassName="gap-4 pb-3" keyboardShouldPersistTaps="handled">
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Foto del producto</Text>
-                                <Pressable
-                                    onPress={openImagePicker}
-                                    className="rounded-[22px] overflow-hidden bg-accent-soft border border-dashed border-border"
-                                    style={({ pressed }) => pressed ? { opacity: 0.85 } : undefined}
-                                >
-                                    {form.image_uri ? (
-                                        <Image
-                                            source={{ uri: form.image_uri }}
-                                            style={{
-                                                width: "100%",
-                                                height: 192,
-                                                backgroundColor: palette.border,
-                                            }}
-                                            contentFit="cover"
-                                            transition={200}
-                                        />
-                                    ) : (
-                                        <View className="w-full h-48 items-center justify-center gap-2.5">
-                                            <MaterialCommunityIcons name="image-plus" size={40} color={palette.accent} />
-                                            <Text className="text-body-muted text-content-muted">
-                                                Toca para agregar foto del producto
-                                            </Text>
-                                        </View>
-                                    )}
-                                </Pressable>
-                                {form.image_uri ? (
-                                    <View className="flex-row gap-3">
-                                        <Pressable
-                                            onPress={openImagePicker}
-                                            className="flex-1 rounded-xl py-3 items-center bg-accent-soft"
-                                            style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                        >
-                                            <Text className="text-chip uppercase text-accent">Cambiar</Text>
-                                        </Pressable>
-                                        <Pressable
-                                            onPress={() => {
-                                                void removeFormImage();
-                                            }}
-                                            className="flex-1 rounded-xl py-3 items-center bg-danger/12"
-                                            style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                        >
-                                            <Text className="text-chip uppercase text-danger">Quitar</Text>
-                                        </Pressable>
-                                    </View>
-                                ) : null}
-                            </View>
-
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Nombre</Text>
-                                <TextInput
-                                    value={form.name}
-                                    onChangeText={(value) => setForm((prev) => ({ ...prev, name: value }))}
-                                    placeholder="Ej. Arroz Premium"
-                                    placeholderTextColor={palette.textMuted}
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                />
-                            </View>
-
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Descripcion</Text>
-                                <TextInput
-                                    value={form.description}
-                                    onChangeText={(value) => setForm((prev) => ({ ...prev, description: value }))}
-                                    placeholder="Descripcion breve"
-                                    placeholderTextColor={palette.textMuted}
-                                    multiline
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background min-h-[90px]"
-                                    style={{ textAlignVertical: "top" }}
-                                />
-                            </View>
-
-                            <View className="flex-row gap-3">
-                                <View className="flex-1 gap-2">
-                                    <Text className="text-body-muted text-content-muted">Stock</Text>
-                                    <TextInput
-                                        value={form.current_stock}
-                                        onChangeText={(value) => setForm((prev) => ({ ...prev, current_stock: value }))}
-                                        keyboardType="numeric"
-                                        placeholder="0"
-                                        placeholderTextColor={palette.textMuted}
-                                        className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                    />
-                                </View>
-                                <View className="flex-1 gap-2">
-                                    <Text className="text-body-muted text-content-muted">Costo medio</Text>
-                                    <TextInput
-                                        value={form.average_cost}
-                                        onChangeText={(value) => setForm((prev) => ({ ...prev, average_cost: value }))}
-                                        keyboardType="decimal-pad"
-                                        placeholder="0"
-                                        placeholderTextColor={palette.textMuted}
-                                        className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                    />
-                                </View>
-                            </View>
-
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Ultimo costo</Text>
-                                <TextInput
-                                    value={form.last_cost}
-                                    onChangeText={(value) => setForm((prev) => ({ ...prev, last_cost: value }))}
-                                    keyboardType="decimal-pad"
-                                    placeholder="0"
-                                    placeholderTextColor={palette.textMuted}
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                />
-                            </View>
-                        </ScrollView>
-
-                        <View className="flex-row gap-3 mt-4">
-                            <Pressable onPress={closeForm} className="flex-1 border rounded-[14px] py-3 items-center border-border">
-                                <Text className="text-button-label text-content">Cancelar</Text>
-                            </Pressable>
-                            <Pressable onPress={handleSave} className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent">
-                                <Text className="text-button-label text-accent">Guardar</Text>
-                            </Pressable>
-                        </View>
-                    </View>
-
-                    {isSourcePickerOpen && (
-                        <View className="absolute inset-0 bg-[rgba(15,23,42,0.55)]">
-                            <Pressable className="flex-1" onPress={() => setIsSourcePickerOpen(false)} />
-                            <View className="rounded-t-[28px] border-t px-[18px] pt-[18px] pb-6 gap-3 bg-surface border-border">
-                                <Text className="text-section-title text-content mb-1">Foto del producto</Text>
-                                <Pressable
-                                    onPress={takePhoto}
-                                    className="flex-row items-center gap-3 rounded-2xl p-4 bg-accent-soft"
-                                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                >
-                                    <MaterialCommunityIcons name="camera-outline" size={20} color={palette.accent} />
-                                    <Text className="text-button-label text-content">Tomar foto</Text>
-                                </Pressable>
-                                <Pressable
-                                    onPress={pickFromLibrary}
-                                    className="flex-row items-center gap-3 rounded-2xl p-4 bg-accent-soft"
-                                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                                >
-                                    <MaterialCommunityIcons name="image-multiple-outline" size={20} color={palette.accent} />
-                                    <Text className="text-button-label text-content">Elegir de la galeria</Text>
-                                </Pressable>
-                                <Pressable
-                                    onPress={() => setIsSourcePickerOpen(false)}
-                                    className="rounded-2xl py-4 items-center border border-border"
-                                >
-                                    <Text className="text-button-label text-content">Cancelar</Text>
-                                </Pressable>
-                            </View>
-                        </View>
-                    )}
-                </View>
-            </Modal>
-
-            <Modal
-                transparent
-                visible={previewUri !== null}
-                animationType="fade"
-                onRequestClose={() => setPreviewUri(null)}
-            >
-                <Pressable
-                    className="flex-1 items-center justify-center bg-[rgba(15,23,42,0.85)]"
-                    onPress={() => setPreviewUri(null)}
-                >
-                    {previewUri ? (
-                        <Image
-                            source={{ uri: previewUri }}
-                            style={{
-                                width: "86%",
-                                maxWidth: 420,
-                                aspectRatio: 1,
-                                borderRadius: 24,
-                                backgroundColor: palette.border,
-                            }}
-                            contentFit="cover"
-                            transition={200}
-                        />
-                    ) : null}
-                    <View className="absolute top-12 right-6">
-                        <MaterialCommunityIcons name="close" size={28} color="#fff" />
-                    </View>
-                </Pressable>
-            </Modal>
+            <ModalPreviewImage previewUri={previewUri} setPreviewUri={setPreviewUri} palette={palette} />
         </View>
     );
 }

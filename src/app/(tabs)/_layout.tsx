@@ -1,11 +1,13 @@
 import { Colors } from "@/constants/theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { StyleSheet, useColorScheme, View } from "react-native";
+import { StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
 
 export default function TabsLayout() {
     const scheme = useColorScheme();
     const theme = Colors[scheme === "dark" ? "dark" : "light"];
+    const { height } = useWindowDimensions();
+    const isCompactHeight = height < 780;
 
     return (
         <Tabs
@@ -21,27 +23,33 @@ export default function TabsLayout() {
                     fontWeight: "700",
                     letterSpacing: 0.6,
                     textTransform: "uppercase",
-                    marginTop: -2,
+                    marginTop: 4,
+                    lineHeight: 12,
                 },
                 tabBarStyle: {
                     position: "absolute",
-                    left: 16,
-                    right: 16,
-                    bottom: 16,
-                    height: 80,
-                    borderRadius: 28,
+                    left: isCompactHeight ? 14 : 16,
+                    right: isCompactHeight ? 14 : 16,
+                    bottom: isCompactHeight ? 10 : 16,
+                    height: isCompactHeight ? 74 : 80,
+                    borderRadius: 30,
                     borderTopWidth: 0,
                     backgroundColor: theme.surface,
                     borderColor: theme.border,
+                    borderWidth: 1,
                     shadowColor: theme.shadow,
-                    shadowOffset: { width: 0, height: 12 },
-                    shadowOpacity: scheme === "dark" ? 0.35 : 0.12,
-                    shadowRadius: 24,
-                    elevation: 18,
+                    shadowOffset: { width: 0, height: 10 },
+                    shadowOpacity: scheme === "dark" ? 0.3 : 0.1,
+                    shadowRadius: 22,
+                    elevation: 16,
+                    paddingTop: 8,
+                    paddingBottom: isCompactHeight ? 6 : 8,
+                    paddingHorizontal: 6,
                 },
                 tabBarItemStyle: {
-                    paddingTop: 8,
-                    paddingBottom: 10,
+                    paddingTop: 6,
+                    paddingBottom: 6,
+                    paddingHorizontal: 4,
                 },
                 tabBarLabelPosition: "below-icon",
                 tabBarShowLabel: true,
@@ -54,7 +62,7 @@ export default function TabsLayout() {
                         <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
                             <MaterialCommunityIcons
                                 name="view-dashboard-outline"
-                                size={size ?? 22}
+                                size={(size ?? 22) - 1}
                                 color={focused ? "#FFFFFF" : color}
                             />
                         </View>
@@ -70,7 +78,7 @@ export default function TabsLayout() {
                         <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
                             <MaterialCommunityIcons
                                 name="warehouse"
-                                size={size ?? 22}
+                                size={(size ?? 22) - 1}
                                 color={focused ? "#FFFFFF" : color}
 
                             />
@@ -86,7 +94,7 @@ export default function TabsLayout() {
                         <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
                             <MaterialCommunityIcons
                                 name="swap-horizontal"
-                                size={size ?? 22}
+                                size={(size ?? 22) - 1}
                                 color={focused ? "#FFFFFF" : color}
                             />
                         </View>
@@ -99,11 +107,12 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
     iconBubble: {
-        width: 34,
-        height: 34,
+        width: 36,
+        height: 36,
         borderRadius: 999,
         alignItems: "center",
         justifyContent: "center",
+        marginBottom: 2,
         backgroundColor: "rgba(100, 116, 139, 0.12)",
     },
     iconBubbleFocused: {

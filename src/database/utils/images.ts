@@ -40,7 +40,6 @@ export async function persistProductImage(
   if (Platform.OS === "web") {
     return webUriToDataUrl(sourceUri);
   }
-  console.log("source uri", sourceUri);
 
   const directory = await getImagesDirectory();
   const source = new File(sourceUri);
