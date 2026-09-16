@@ -77,7 +77,7 @@ export default function InventoryScreen() {
                     className="flex-row items-center gap-2 rounded-2xl px-3.5 py-2.5 bg-accent"
                     style={({ pressed }) => pressed ? { opacity: 0.9 } : undefined}
                 >
-                    <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                    <MaterialCommunityIcons name="plus" size={18} color={palette.onAccent} />
 
                 </Pressable>
             </View>

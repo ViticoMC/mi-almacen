@@ -9,6 +9,7 @@
   --content: #0f172a;
   --content-muted: #64748b;
   --accent: #0a5fd8;
+  --on-accent: #ffffff;
   --accent-soft: rgba(10, 95, 216, 0.16);
   --border: rgba(15, 23, 42, 0.08);
   --shadow: rgba(15, 23, 42, 0.08);
@@ -31,6 +32,7 @@
   --content: #f8fafc;
   --content-muted: #94a3b8;
   --accent: #4ba3ff;
+  --on-accent: #07111f;
   --accent-soft: rgba(75, 163, 255, 0.18);
   --border: rgba(148, 163, 184, 0.12);
   --shadow: rgba(0, 0, 0, 0.28);

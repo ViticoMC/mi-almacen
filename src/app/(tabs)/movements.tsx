@@ -312,7 +312,7 @@ export default function MovementsScreen() {
                         className="rounded-2xl px-3.5 py-2.5 bg-accent"
                         style={({ pressed }) => (pressed ? { opacity: 0.8 } : undefined)}
                     >
-                        <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                        <MaterialCommunityIcons name="plus" size={18} color={palette.onAccent} />
                     </Pressable>
                 </View>
 
@@ -561,7 +561,7 @@ export default function MovementsScreen() {
                                     className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent"
                                     style={({ pressed }) => (pressed || saving ? { opacity: 0.8 } : undefined)}
                                 >
-                                    <Text className="text-button-label text-accent">
+                                    <Text className="text-button-label text-on-accent">
                                         {saving ? "Guardando..." : "Registrar"}
                                     </Text>
                                 </Pressable>

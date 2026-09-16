@@ -26,6 +26,7 @@ export type ThemePalette = {
   text: string;
   textMuted: string;
   accent: string;
+  onAccent: string;
   accentSoft: string;
   border: string;
   shadow: string;

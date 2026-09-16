@@ -271,7 +271,7 @@ export default function ProductForm({
                             <Text className="text-button-label text-content">Cancelar</Text>
                         </Pressable>
                         <Pressable onPress={handleSave} className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent">
-                            <Text className="text-button-label text-accent">Guardar</Text>
+                            <Text className="text-button-label text-on-accent">Guardar</Text>
                         </Pressable>
                     </View>
                 </View>

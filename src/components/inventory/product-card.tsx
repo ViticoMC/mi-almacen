@@ -110,7 +110,7 @@ function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadPr
                     className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-accent"
                     style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
                 >
-                    <Text className="text-chip uppercase text-accent">Ficha</Text>
+                    <Text className="text-chip uppercase text-on-accent">Ficha</Text>
                 </Pressable>
                 <Pressable
                     onPress={() => openEditForm(product)}
@@ -128,7 +128,7 @@ function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadPr
                     className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-danger/12"
                     style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
                 >
-                    <Text className="text-chip uppercase text-accent">{product.active === 0 ? "Activar" : "Desactivar"}</Text>
+                    <Text className="text-chip uppercase text-danger">{product.active === 0 ? "Activar" : "Desactivar"}</Text>
                 </Pressable>
             </View>
         </View>

@@ -372,7 +372,7 @@ export default function DocumentForm({ kind, db, products, palette, onClose, onS
             className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent"
             style={({ pressed }) => (pressed || saving ? { opacity: 0.8 } : undefined)}
           >
-            <Text className="text-button-label text-accent">
+            <Text className="text-button-label text-on-accent">
               {saving ? "Guardando…" : isEntry ? "Guardar entrada" : "Guardar salida"}
             </Text>
           </Pressable>

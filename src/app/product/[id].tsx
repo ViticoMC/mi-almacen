@@ -224,31 +224,31 @@ export default function ProductDetailScreen() {
                   </Text>
                 </View>
               </View>
-              <View className="rounded-2xl overflow-hidden bg-background border border-border">
-                <View className="flex-row items-center justify-between px-3.5 py-3 border-b border-border">
-                  <Text className="text-body-muted uppercase text-content-muted" numberOfLines={1}>
+              <View className="rounded-xl overflow-hidden bg-background border border-border">
+                <View className="flex-row items-center justify-between px-3 py-2 border-b border-border">
+                  <Text className="text-chip uppercase text-content-muted" numberOfLines={1}>
                     Stock
                   </Text>
-                  <Text className="text-metric-value text-content text-right">
+                  <Text className="text-[15px] font-bold text-content text-right">
                     {Number(product.current_stock || 0)}
                   </Text>
                 </View>
-                <View className="flex-row items-center justify-between px-3.5 py-3 border-b border-border">
+                <View className="flex-row items-center justify-between px-3 py-2 border-b border-border">
                   <Text
-                    className="text-body-muted uppercase text-content-muted shrink-0"
+                    className="text-chip uppercase text-content-muted shrink-0"
                     numberOfLines={1}
                   >
                     Costo medio
                   </Text>
-                  <Text className="text-metric-value text-content text-right flex-1" numberOfLines={1}>
+                  <Text className="text-[15px] font-bold text-content text-right flex-1" numberOfLines={1}>
                     ${Number(product.average_cost || 0).toFixed(2)}
                   </Text>
                 </View>
-                <View className="flex-row items-center justify-between px-3.5 py-3">
-                  <Text className="text-body-muted uppercase text-content-muted" numberOfLines={1}>
+                <View className="flex-row items-center justify-between px-3 py-2">
+                  <Text className="text-chip uppercase text-content-muted" numberOfLines={1}>
                     Último costo
                   </Text>
-                  <Text className="text-metric-value text-accent text-right" numberOfLines={1}>
+                  <Text className="text-[15px] font-bold text-accent text-right" numberOfLines={1}>
                     ${Number(product.last_cost || 0).toFixed(2)}
                   </Text>
                 </View>
@@ -365,7 +365,7 @@ export default function ProductDetailScreen() {
                   className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent"
                   style={({ pressed }) => (pressed || savingUnit ? { opacity: 0.8 } : undefined)}
                 >
-                  <Text className="text-button-label text-accent">
+                  <Text className="text-button-label text-on-accent">
                     {savingUnit ? "Guardando…" : editingUnitId ? "Actualizar" : "Agregar"}
                   </Text>
                 </Pressable>
