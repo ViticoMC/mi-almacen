@@ -1,12 +1,32 @@
+import MovementSummaryCard from "@/components/movements/movement-summary-card";
 import { Colors } from "@/constants/theme";
 import { cn } from "@/utils/cn";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Text, useColorScheme, View } from "react-native";
+import { formatMovementDate, getReferenceLabel } from "@/utils/movement-presentation";
+import { useRouter } from "expo-router";
+import { Pressable, Text, useColorScheme, View } from "react-native";
 import type { RecentMovement, ThemePalette } from "./types";
+
+const quantityFormatter = new Intl.NumberFormat("es-MX", {
+    maximumFractionDigits: 2,
+});
+
+const moneyFormatter = new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2,
+});
 
 export default function RecentMovementsSection({ recentMovements }: { recentMovements: RecentMovement[] }) {
     const scheme = useColorScheme();
     const palette = Colors[scheme === "dark" ? "dark" : "light"];
+    const router = useRouter();
+
+    const openDetail = (referenceType: string, referenceId: string) => {
+        router.push({
+            pathname: "/movement/[referenceType]/[referenceId]",
+            params: { referenceType, referenceId },
+        });
+    };
 
     return (
         <View className="gap-3">
@@ -33,6 +53,7 @@ export default function RecentMovementsSection({ recentMovements }: { recentMove
                             movement={movement}
                             divider={index < recentMovements.length - 1}
                             palette={palette}
+                            onViewDetails={openDetail}
                         />
                     ))
                 )}
@@ -45,37 +66,46 @@ function MovementRow({
     movement,
     divider,
     palette,
+    onViewDetails,
 }: {
     movement: RecentMovement;
     divider: boolean;
     palette: ThemePalette;
+    onViewDetails: (referenceType: string, referenceId: string) => void;
 }) {
-    const movementIcon = movement.movement_type === "OUT" ? "tray-arrow-up" : "tray-arrow-down";
-    const movementIconColor = movement.movement_type === "OUT" ? "#F59E0B" : palette.accent;
+    const isOutgoing =
+        movement.movement_type === "OUT" || movement.movement_type === "ADJUSTMENT_OUT";
+    const movementIconColor = isOutgoing ? "#F59E0B" : palette.accent;
+    const quantity = Number(movement.quantity || 0);
+    const hasTotal =
+        movement.unit_cost !== null &&
+        movement.unit_cost !== undefined &&
+        Number.isFinite(Number(movement.unit_cost));
+    const total = quantity * Number(movement.unit_cost || 0);
 
     return (
-        <View className={cn("flex-row items-center justify-between gap-4 px-[18px] py-4", divider && "border-b border-content-muted/12")}>
-            <View className="flex-1 flex-row items-start gap-2.5">
-                <View
-                    className={cn(
-                        "w-2.5 h-2.5 rounded-full mt-1.5",
-                        movement.movement_type === "OUT" ? "bg-warning" : "bg-accent"
-                    )}
-                />
-                <MaterialCommunityIcons name={movementIcon} size={18} color={movementIconColor} style={{ marginTop: 3 }} />
-                <View className="flex-1 gap-1">
-                    <Text className="text-button-label text-content">
-                        {movement.reference_type === "PURCHASE" ? "Compra" : movement.reference_type === "SALE" ? "Venta" : "Ajuste"}
-                    </Text>
-                    <Text className="text-body-muted text-content-muted">
-                        {movement.notes ?? "Movimiento de inventario"}
-                    </Text>
-                </View>
-            </View>
-            <Text className="text-chip uppercase text-content-muted">
-                {movement.movement_type === "OUT" ? "-" : "+"}
-                {movement.quantity}
-            </Text>
+        <View className={cn("px-[18px] py-4", divider && "border-b border-content-muted/12")}>
+            <MovementSummaryCard
+                title={getReferenceLabel(movement.reference_type)}
+                subtitle={`${formatMovementDate(movement.movement_date)} • ${quantityFormatter.format(quantity)} u.`}
+                totalText={hasTotal ? moneyFormatter.format(total) : "—"}
+                deltaText={`${isOutgoing ? "-" : "+"}${quantityFormatter.format(quantity)}`}
+                isOutgoing={isOutgoing}
+                icon={isOutgoing ? "tray-arrow-up" : "tray-arrow-down"}
+                iconColor={movementIconColor}
+                action={
+                    <Pressable
+                        onPress={() => onViewDetails(movement.reference_type, movement.reference_id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Ver detalles de ${getReferenceLabel(movement.reference_type)}`}
+                        hitSlop={8}
+                        className="rounded-xl py-2.5 items-center justify-center bg-accent-soft"
+                        style={({ pressed }) => (pressed ? { opacity: 0.8 } : undefined)}
+                    >
+                        <Text className="text-chip uppercase text-accent">Ver detalles</Text>
+                    </Pressable>
+                }
+            />
         </View>
     );
 }

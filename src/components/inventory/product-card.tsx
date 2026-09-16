@@ -1,13 +1,18 @@
 import type { ThemePalette } from "@/components/index/types";
 import {
-    updateProduct,
+    deleteProduct,
     type ProductWithMetrics
 } from "@/database";
+import { deleteProductImage } from "@/database/utils/images";
+import { notifyProductsChanged } from "@/data/products-store";
+import { cn } from "@/utils/cn";
+import { getStockStatus } from "@/utils/inventory-filters";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { SQLiteDatabase } from "expo-sqlite";
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
+    Alert,
     Pressable,
     Text,
     View
@@ -27,6 +32,9 @@ interface ProductCardProps {
 
 function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadProducts }: ProductCardProps) {
     const router = useRouter();
+    const stockStatus = getStockStatus(product);
+    const stockValue = Number(product.current_stock || 0);
+    const [deleting, setDeleting] = useState(false);
     const hasCosts =
         Number(product.average_cost || 0) > 0 || Number(product.last_cost || 0) > 0;
 
@@ -34,21 +42,61 @@ function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadPr
         return hasCosts ? `$${Number(value || 0).toFixed(2)}` : "—";
     };
 
-    const changueActived = async () => {
-        let { active, id: productId } = product;
+    const deleteProductAndImage = async () => {
+        if (deleting) {
+            return;
+        }
+
+        // Defensa extra: el botón solo se muestra sin stock, pero no se
+        // permite borrar con existencias bajo ninguna circunstancia.
+        if (Number(product.current_stock || 0) > 0) {
+            return;
+        }
+
+        setDeleting(true);
+
         try {
-            active = active === 0 ? 1 : 0
-            await updateProduct(db, productId, {
-                active
-            });
+            // Libera espacio: la foto no forma parte del historial.
+            await deleteProductImage(product.image_path);
+            // Borrado lógico: la fila y sus movimientos se conservan.
+            await deleteProduct(db, product.id);
             await loadProducts();
+            notifyProductsChanged();
         } catch (error) {
-            console.warn("No se pudo desactivar el producto:", error);
+            Alert.alert(
+                "No se pudo eliminar",
+                error instanceof Error ? error.message : "Inténtalo de nuevo.",
+            );
+        } finally {
+            setDeleting(false);
         }
     };
 
+    const confirmDelete = () => {
+        Alert.alert(
+            "Eliminar producto",
+            `"${product.name}" saldrá del inventario y se borrará su foto. Su historial de movimientos se conserva. Esta acción no se puede deshacer.`,
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Eliminar",
+                    style: "destructive",
+                    onPress: () => void deleteProductAndImage(),
+                },
+            ],
+        );
+    };
+
     return (
-        <View className="rounded-[20px] border p-4 gap-3.5 bg-surface border-border">
+        <View
+            className={cn(
+                "rounded-[20px] border p-4 gap-3.5 bg-surface",
+                stockStatus === "out" && "border-danger",
+                stockStatus === "low" && "border-warning",
+                stockStatus === "ok" && "border-border",
+            )}
+            style={stockStatus !== "ok" ? { borderWidth: 1.5 } : undefined}
+        >
             <View className="flex-row items-center gap-3">
                 {product.image_path ? (
                     <Pressable
@@ -80,12 +128,53 @@ function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadPr
                         {product.description ?? "Sin descripcion"}
                     </Text>
                 </View>
-                <View className="rounded-full px-2.5 py-1.5 self-start bg-accent-soft">
-                    <Text className="text-chip uppercase text-accent">
-                        {Number(product.current_stock || 0)} u.
+                <View
+                    className={cn(
+                        "rounded-full px-2.5 py-1.5 self-start",
+                        stockStatus === "out" && "bg-danger/10",
+                        stockStatus === "low" && "bg-warning/15",
+                        stockStatus === "ok" && "bg-accent-soft",
+                    )}
+                >
+                    <Text
+                        className={cn(
+                            "text-chip uppercase",
+                            stockStatus === "out" && "text-danger",
+                            stockStatus === "low" && "text-warning",
+                            stockStatus === "ok" && "text-accent",
+                        )}
+                    >
+                        {stockValue} u.
                     </Text>
                 </View>
             </View>
+
+            {stockStatus !== "ok" ? (
+                <View
+                    className={cn(
+                        "flex-row items-center gap-2 rounded-xl px-3 py-2",
+                        stockStatus === "out" && "bg-danger/10",
+                        stockStatus === "low" && "bg-warning/15",
+                    )}
+                >
+                    <MaterialCommunityIcons
+                        name={stockStatus === "out" ? "alert-octagon-outline" : "alert-outline"}
+                        size={16}
+                        color={stockStatus === "out" ? "#DC2626" : "#F59E0B"}
+                    />
+                    <Text
+                        className={cn(
+                            "text-body-muted flex-1",
+                            stockStatus === "out" && "text-danger",
+                            stockStatus === "low" && "text-warning",
+                        )}
+                    >
+                        {stockStatus === "out"
+                            ? "Sin stock — requiere reposición"
+                            : "Bajo stock — reponer pronto"}
+                    </Text>
+                </View>
+            ) : null}
 
             <View className="flex-row items-end justify-between gap-2">
                 <View className="flex-1">
@@ -121,15 +210,20 @@ function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadPr
                 >
                     <Text className="text-chip uppercase text-accent">Editar</Text>
                 </Pressable>
-                <Pressable
-                    onPress={() => changueActived()}
-                    hitSlop={8}
-                    pressRetentionOffset={12}
-                    className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-danger/12"
-                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
-                >
-                    <Text className="text-chip uppercase text-danger">{product.active === 0 ? "Activar" : "Desactivar"}</Text>
-                </Pressable>
+                {stockStatus === "out" ? (
+                    <Pressable
+                        onPress={confirmDelete}
+                        disabled={deleting}
+                        hitSlop={8}
+                        pressRetentionOffset={12}
+                        className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-danger/12"
+                        style={({ pressed }) => pressed || deleting ? { opacity: 0.8 } : undefined}
+                    >
+                        <Text className="text-chip uppercase text-danger">
+                            {deleting ? "Eliminando..." : "Eliminar"}
+                        </Text>
+                    </Pressable>
+                ) : null}
             </View>
         </View>
     )

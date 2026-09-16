@@ -27,6 +27,10 @@ import {
   UNITS_HARDENING_MIGRATION_VERSION,
   UNITS_HARDENING_SCHEMA_SQL,
 } from "./0005-units-hardening";
+import {
+  BASE_UNITS_BACKFILL_MIGRATION_VERSION,
+  BASE_UNITS_BACKFILL_SCHEMA_SQL,
+} from "./0006-base-units-backfill";
 
 type Migration = {
   version: number;
@@ -63,6 +67,12 @@ const MIGRATIONS: Migration[] = [
     version: UNITS_HARDENING_MIGRATION_VERSION,
     up: async (db) => {
       await db.execAsync(UNITS_HARDENING_SCHEMA_SQL);
+    },
+  },
+  {
+    version: BASE_UNITS_BACKFILL_MIGRATION_VERSION,
+    up: async (db) => {
+      await db.execAsync(BASE_UNITS_BACKFILL_SCHEMA_SQL);
     },
   },
 ];

@@ -770,3 +770,243 @@ export async function createSale(db: SQLiteDatabase, input: SaleDraft) {
     created_at: createdAt,
   };
 }
+
+export type MovementDocumentRef = {
+  referenceType: string;
+  referenceId: string;
+};
+
+export type PurchaseDocumentItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  unit_name: string;
+  quantity: number;
+  factor: number;
+  inventory_quantity: number;
+  unit_cost: number;
+  total: number;
+};
+
+export type PurchaseDocument = {
+  id: string;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  invoice_number: string | null;
+  purchase_date: string;
+  subtotal: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  items: PurchaseDocumentItem[];
+};
+
+export async function getPurchaseDocument(
+  db: SQLiteDatabase,
+  purchaseId: string,
+): Promise<PurchaseDocument | null> {
+  const header = await db.getFirstAsync<
+    Omit<PurchaseDocument, "items">
+  >(
+    `
+    SELECT
+      p.id,
+      p.supplier_id,
+      s.name AS supplier_name,
+      p.invoice_number,
+      p.purchase_date,
+      p.subtotal,
+      p.total,
+      p.notes,
+      p.created_at
+    FROM purchases p
+    LEFT JOIN suppliers s ON s.id = p.supplier_id
+    WHERE p.id = $id
+    `,
+    { $id: purchaseId },
+  );
+
+  if (!header) {
+    return null;
+  }
+
+  const items = await db.getAllAsync<PurchaseDocumentItem>(
+    `
+    SELECT
+      pi.id,
+      pi.product_id,
+      pr.name AS product_name,
+      COALESCE(pu.name, 'Unidad') AS unit_name,
+      pi.quantity,
+      pi.factor,
+      pi.inventory_quantity,
+      pi.unit_cost,
+      pi.total
+    FROM purchase_items pi
+    INNER JOIN products pr ON pr.id = pi.product_id
+    LEFT JOIN product_units pu ON pu.id = pi.unit_id
+    WHERE pi.purchase_id = $id
+    ORDER BY pr.name ASC
+    `,
+    { $id: purchaseId },
+  );
+
+  return { ...header, items };
+}
+
+export type SaleDocumentItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  unit_name: string;
+  quantity: number;
+  factor: number;
+  inventory_quantity: number;
+  unit_price: number;
+  cost_at_sale: number;
+  total: number;
+};
+
+export type SaleDocument = {
+  id: string;
+  sale_date: string;
+  subtotal: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  items: SaleDocumentItem[];
+};
+
+export async function getSaleDocument(
+  db: SQLiteDatabase,
+  saleId: string,
+): Promise<SaleDocument | null> {
+  const header = await db.getFirstAsync<Omit<SaleDocument, "items">>(
+    `
+    SELECT id, sale_date, subtotal, total, notes, created_at
+    FROM sales
+    WHERE id = $id
+    `,
+    { $id: saleId },
+  );
+
+  if (!header) {
+    return null;
+  }
+
+  const items = await db.getAllAsync<SaleDocumentItem>(
+    `
+    SELECT
+      si.id,
+      si.product_id,
+      pr.name AS product_name,
+      COALESCE(pu.name, 'Unidad') AS unit_name,
+      si.quantity,
+      si.factor,
+      si.inventory_quantity,
+      si.unit_price,
+      si.cost_at_sale,
+      si.total
+    FROM sale_items si
+    INNER JOIN products pr ON pr.id = si.product_id
+    LEFT JOIN product_units pu ON pu.id = si.unit_id
+    WHERE si.sale_id = $id
+    ORDER BY pr.name ASC
+    `,
+    { $id: saleId },
+  );
+
+  return { ...header, items };
+}
+
+export type AdjustmentDocumentItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  expected_quantity: number;
+  actual_quantity: number;
+  difference_quantity: number;
+};
+
+export type AdjustmentDocument = {
+  id: string;
+  adjustment_date: string;
+  reason: string | null;
+  created_at: string;
+  items: AdjustmentDocumentItem[];
+};
+
+export async function getAdjustmentDocument(
+  db: SQLiteDatabase,
+  adjustmentId: string,
+): Promise<AdjustmentDocument | null> {
+  const header = await db.getFirstAsync<Omit<AdjustmentDocument, "items">>(
+    `
+    SELECT id, adjustment_date, reason, created_at
+    FROM inventory_adjustments
+    WHERE id = $id
+    `,
+    { $id: adjustmentId },
+  );
+
+  if (!header) {
+    return null;
+  }
+
+  const items = await db.getAllAsync<AdjustmentDocumentItem>(
+    `
+    SELECT
+      ai.id,
+      ai.product_id,
+      pr.name AS product_name,
+      ai.expected_quantity,
+      ai.actual_quantity,
+      ai.difference_quantity
+    FROM inventory_adjustment_items ai
+    INNER JOIN products pr ON pr.id = ai.product_id
+    WHERE ai.adjustment_id = $id
+    ORDER BY pr.name ASC
+    `,
+    { $id: adjustmentId },
+  );
+
+  return { ...header, items };
+}
+
+export type ManualMovementDocument = InventoryMovementRow & {
+  product_name: string;
+  unit_name: string;
+};
+
+export async function getManualMovementDocument(
+  db: SQLiteDatabase,
+  referenceId: string,
+): Promise<ManualMovementDocument | null> {
+  return db.getFirstAsync<ManualMovementDocument>(
+    `
+    SELECT
+      m.id,
+      m.product_id,
+      p.name AS product_name,
+      COALESCE(
+        (SELECT name FROM product_units
+         WHERE product_id = m.product_id AND is_base = 1
+         LIMIT 1),
+        'Unidad'
+      ) AS unit_name,
+      m.movement_type,
+      m.quantity,
+      m.unit_cost,
+      m.reference_type,
+      m.reference_id,
+      m.movement_date,
+      m.notes,
+      m.created_at
+    FROM inventory_movements m
+    INNER JOIN products p ON p.id = m.product_id
+    WHERE m.reference_type = 'MANUAL' AND m.reference_id = $id
+    LIMIT 1
+    `,
+    { $id: referenceId },
+  );
+}

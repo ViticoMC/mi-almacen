@@ -6,6 +6,7 @@ import type {
 } from "../../entities";
 import { createId } from "../../utils/ids";
 import { nowIso } from "../../utils/time";
+import { createUnit } from "../units/units.repository";
 
 const PRODUCT_WITH_METRICS_COLUMNS = `
   p.id,
@@ -32,6 +33,7 @@ export async function listProducts(
 ): Promise<ProductWithMetrics[]> {
   return db.getAllAsync<ProductWithMetrics>(
     `SELECT ${PRODUCT_WITH_METRICS_COLUMNS} ${PRODUCT_WITH_METRICS_JOIN}
+      WHERE p.active = 1
       ORDER BY p.name ASC`,
   );
 }
@@ -84,6 +86,15 @@ export async function createProduct(
       $updated_at: timestamp,
     },
   );
+
+  // Todo producto nace con su unidad base (1 elemento) para que se puedan
+  // registrar movimientos sin pasar antes por la ficha del producto.
+  await createUnit(db, {
+    product_id: id,
+    name: "Unidad",
+    factor: 1,
+    is_base: 1,
+  });
 
   return getProductById(db, id);
 }

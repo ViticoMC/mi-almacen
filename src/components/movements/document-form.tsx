@@ -204,16 +204,16 @@ export default function DocumentForm({ kind, db, products, palette, onClose, onS
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-      <View className="gap-2">
-        {/* <Text className="text-body-muted text-content-muted">
+        <View className="gap-2">
+          {/* <Text className="text-body-muted text-content-muted">
           {isEntry ? "Cada línea: producto + presentación + cantidad + costo." : "Cada línea: producto + presentación + cantidad + precio."}
         </Text> */}
-        <Text className="text-body-muted text-content-muted">
-          La presentación se configura en la ficha del producto.
-        </Text>
-      </View>
+          <Text className="text-body-muted text-content-muted">
+            La presentación se configura en la ficha del producto.
+          </Text>
+        </View>
 
-      {/* {isEntry ? (
+        {/* {isEntry ? (
         <View className="gap-2">
           <Text className="text-body-muted text-content-muted">Folio / Factura (opcional)</Text>
           <TextInput
@@ -226,132 +226,132 @@ export default function DocumentForm({ kind, db, products, palette, onClose, onS
         </View>
       ) : null} */}
 
-      {lines.map((line, index) => {
-        const units = line.product_id ? (unitsByProduct[line.product_id] ?? []) : [];
-        const selectedUnit = units.find((u) => u.id === line.unit_id) ?? null;
-        const qty = Number(String(line.quantity).replace(",", "."));
-        const price = Number(String(line.price).replace(",", "."));
-        const factor = selectedUnit ? Number(selectedUnit.factor) : null;
-        const baseQty = factor !== null && Number.isFinite(qty) ? qty * factor : null;
-        const lineTotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : null;
+        {lines.map((line, index) => {
+          const units = line.product_id ? (unitsByProduct[line.product_id] ?? []) : [];
+          const selectedUnit = units.find((u) => u.id === line.unit_id) ?? null;
+          const qty = Number(String(line.quantity).replace(",", "."));
+          const price = Number(String(line.price).replace(",", "."));
+          const factor = selectedUnit ? Number(selectedUnit.factor) : null;
+          const baseQty = factor !== null && Number.isFinite(qty) ? qty * factor : null;
+          const lineTotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : null;
 
-        return (
-          <View key={line.key} className="rounded-2xl border p-3 gap-3 bg-background border-border">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-button-label text-content">Producto {index + 1}</Text>
-              <Pressable onPress={() => removeLine(line.key)} hitSlop={8}>
-                <MaterialCommunityIcons name="trash-can-outline" size={20} color={palette.textMuted} />
-              </Pressable>
-            </View>
+          return (
+            <View key={line.key} className="rounded-2xl border p-3 gap-3 bg-background border-border">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-button-label text-content">Producto {index + 1}</Text>
+                <Pressable onPress={() => removeLine(line.key)} hitSlop={8}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={20} color={palette.textMuted} />
+                </Pressable>
+              </View>
 
-            <LineProductPicker
-              value={line.product_id}
-              items={productItems}
-              palette={palette}
-              onChange={(value) => {
-                updateLine(line.key, { product_id: value, unit_id: null, price: "" });
-              }}
-            />
+              <LineProductPicker
+                value={line.product_id}
+                items={productItems}
+                palette={palette}
+                onChange={(value) => {
+                  updateLine(line.key, { product_id: value, unit_id: null, price: "" });
+                }}
+              />
 
-            {line.product_id ? (
-              <View className="gap-2">
-                <Text className="text-body-muted text-content-muted">Presentación</Text>
-                <View className="flex-row flex-wrap gap-2">
-                  {units.map((unit) => {
-                    const selected = line.unit_id === unit.id;
-                    return (
-                      <Pressable
-                        key={unit.id}
-                        onPress={() => {
-                          updateLine(line.key, { unit_id: unit.id });
-                          void prefillPrice(line.key, line.product_id!, unit.id);
-                        }}
-                        className="px-3 py-2 rounded-2xl border"
-                        style={{
-                          backgroundColor: selected ? palette.accentSoft : palette.background,
-                          borderColor: selected ? palette.accent : palette.border,
-                        }}
-                      >
-                        <Text
-                          className={selected ? "text-button-label text-accent" : "text-button-label text-content"}
+              {line.product_id ? (
+                <View className="gap-2">
+                  <Text className="text-body-muted text-content-muted">Presentación</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {units.map((unit) => {
+                      const selected = line.unit_id === unit.id;
+                      return (
+                        <Pressable
+                          key={unit.id}
+                          onPress={() => {
+                            updateLine(line.key, { unit_id: unit.id });
+                            void prefillPrice(line.key, line.product_id!, unit.id);
+                          }}
+                          className="px-3 py-2 rounded-2xl border"
+                          style={{
+                            backgroundColor: selected ? palette.accentSoft : palette.background,
+                            borderColor: selected ? palette.accent : palette.border,
+                          }}
                         >
-                          {unit.name} × {Number(unit.factor)}
-                          {Number(unit.is_base) === 1 ? " · principal" : ""}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            className={selected ? "text-button-label text-accent" : "text-button-label text-content"}
+                          >
+                            {unit.name} × {Number(unit.factor)}
+                            {Number(unit.is_base) === 1 ? " · principal" : ""}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {units.length === 0 ? (
+                    <Text className="text-body-muted text-content-muted">
+                      Sin presentaciones: se creará “Unidad ×1” al guardar, o créalas en la ficha.
+                    </Text>
+                  ) : null}
+                  {selectedUnit && baseQty !== null ? (
+                    <Text className="text-body-muted text-content-muted">
+                      Equivale a {baseQty} unidades · Total:{" "}
+                      {lineTotal !== null ? moneyFormatter.format(lineTotal) : "—"}
+                    </Text>
+                  ) : null}
                 </View>
-                {units.length === 0 ? (
-                  <Text className="text-body-muted text-content-muted">
-                    Sin presentaciones: se creará “Unidad ×1” al guardar, o créalas en la ficha.
-                  </Text>
-                ) : null}
-                {selectedUnit && baseQty !== null ? (
-                  <Text className="text-body-muted text-content-muted">
-                    Equivale a {baseQty} unidades · Total:{" "}
-                    {lineTotal !== null ? moneyFormatter.format(lineTotal) : "—"}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
+              ) : null}
 
-            <View className="flex-row gap-3">
-              <View className="flex-1 gap-2">
-                <Text className="text-body-muted text-content-muted">Cantidad</Text>
-                <TextInput
-                  value={line.quantity}
-                  onChangeText={(value) => updateLine(line.key, { quantity: value })}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={palette.textMuted}
-                  className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                />
-              </View>
-              <View className="flex-1 gap-2">
-                <Text className="text-body-muted text-content-muted">
-                  {isEntry ? "Costo" : "Precio"}
-                </Text>
-                <TextInput
-                  value={line.price}
-                  onChangeText={(value) => updateLine(line.key, { price: value })}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={palette.textMuted}
-                  className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                />
+              <View className="flex-row gap-3">
+                <View className="flex-1 gap-2">
+                  <Text className="text-body-muted text-content-muted">Cantidad</Text>
+                  <TextInput
+                    value={line.quantity}
+                    onChangeText={(value) => updateLine(line.key, { quantity: value })}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={palette.textMuted}
+                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
+                  />
+                </View>
+                <View className="flex-1 gap-2">
+                  <Text className="text-body-muted text-content-muted">
+                    {isEntry ? "Costo" : "Precio"}
+                  </Text>
+                  <TextInput
+                    value={line.price}
+                    onChangeText={(value) => updateLine(line.key, { price: value })}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={palette.textMuted}
+                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
+                  />
+                </View>
               </View>
             </View>
-          </View>
-        );
-      })}
+          );
+        })}
 
-      <Pressable
-        onPress={addLine}
-        className="flex-row items-center justify-center gap-2 rounded-2xl py-3 border border-dashed border-border bg-background"
-      >
-        <MaterialCommunityIcons name="plus" size={18} color={palette.accent} />
-        <Text className="text-button-label text-accent">Agregar otro producto</Text>
-      </Pressable>
+        <Pressable
+          onPress={addLine}
+          className="flex-row items-center justify-center gap-2 rounded-2xl py-3 border border-dashed border-border bg-background"
+        >
+          <MaterialCommunityIcons name="plus" size={18} color={palette.accent} />
+          <Text className="text-button-label text-accent">Agregar otro producto</Text>
+        </Pressable>
 
-      <View className="gap-2">
-        <Text className="text-body-muted text-content-muted">Notas</Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Referencia del documento"
-          placeholderTextColor={palette.textMuted}
-          multiline
-          className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background min-h-[70px]"
-          style={{ textAlignVertical: "top" }}
-        />
-      </View>
-
-      {submitError ? (
-        <View className="rounded-xl px-3 py-2.5 bg-danger/10 border border-danger/20">
-          <Text className="text-body-muted text-danger">{submitError}</Text>
+        <View className="gap-2">
+          <Text className="text-body-muted text-content-muted">Notas</Text>
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Notas adicionales (opcional)"
+            placeholderTextColor={palette.textMuted}
+            multiline
+            className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background min-h-[70px]"
+            style={{ textAlignVertical: "top" }}
+          />
         </View>
-      ) : null}
+
+        {submitError ? (
+          <View className="rounded-xl px-3 py-2.5 bg-danger/10 border border-danger/20">
+            <Text className="text-body-muted text-danger">{submitError}</Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       <View className="shrink-0 pt-3 gap-3 border-t border-border">

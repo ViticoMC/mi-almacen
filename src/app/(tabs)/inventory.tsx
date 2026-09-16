@@ -1,3 +1,4 @@
+import InventoryFilterBar from "@/components/inventory/inventory-filter-bar";
 import ModalPreviewImage from "@/components/inventory/modal-preview-image";
 import ProductForm from "@/components/inventory/product-form";
 import ProductList from "@/components/inventory/product-list";
@@ -11,21 +12,25 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Pressable,
     Text,
+    TextInput,
     useColorScheme,
     View
 } from "react-native";
 import { useProducts } from "@/hooks/useProducts";
+import { filterProducts, isLowStock, type InventoryFilter } from "@/utils/inventory-filters";
 
 export default function InventoryScreen() {
     const scheme = useColorScheme();
     const palette = Colors[scheme === "dark" ? "dark" : "light"];
     const db = useSQLiteContext();
     const router = useRouter();
-    const params = useLocalSearchParams<{ openForm?: string }>();
+    const params = useLocalSearchParams<{ openForm?: string; filter?: string }>();
     const { products, loading, reloadProducts } = useProducts(db);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<ProductWithMetrics | null>(null);
     const [previewUri, setPreviewUri] = useState<string | null>(null);
+    const [filter, setFilter] = useState<InventoryFilter>("ALL");
+    const [query, setQuery] = useState("");
 
     useEffect(() => {
         if (params.openForm !== "true") {
@@ -40,9 +45,39 @@ export default function InventoryScreen() {
         });
     }, [params.openForm, router]);
 
+    useEffect(() => {
+        if (params.filter !== "low-stock") {
+            return;
+        }
+
+        router.setParams({ filter: undefined });
+
+        Promise.resolve().then(() => {
+            setFilter("LOW_STOCK");
+        });
+    }, [params.filter, router]);
+
     const totalStock = useMemo(
         () => products.reduce((sum, product) => sum + Number(product.current_stock || 0), 0),
         [products],
+    );
+
+    const lowStockCount = useMemo(
+        () => products.filter((product) => isLowStock(product)).length,
+        [products],
+    );
+
+    const filteredProducts = useMemo(
+        () => filterProducts(products, filter, query),
+        [products, filter, query],
+    );
+
+    const filterOptions = useMemo(
+        () => [
+            { value: "ALL" as InventoryFilter, label: "Todos", count: products.length },
+            { value: "LOW_STOCK" as InventoryFilter, label: "Bajo stock", count: lowStockCount },
+        ],
+        [products.length, lowStockCount],
     );
 
     const openCreateForm = useCallback(() => {
@@ -93,11 +128,43 @@ export default function InventoryScreen() {
                 </View>
             </View>
 
+            <View className="flex-row items-center gap-2 mb-3 px-4 py-1 rounded-2xl border bg-surface border-border">
+                <MaterialCommunityIcons name="magnify" size={18} color={palette.textMuted} />
+                <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Buscar por nombre..."
+                    placeholderTextColor={palette.textMuted}
+                    className="flex-1 py-3 text-[15px] text-content"
+                    returnKeyType="search"
+                    accessibilityLabel="Buscar productos por nombre"
+                />
+                {query.length > 0 ? (
+                    <Pressable
+                        onPress={() => setQuery("")}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Limpiar búsqueda"
+                    >
+                        <MaterialCommunityIcons name="close-circle-outline" size={18} color={palette.textMuted} />
+                    </Pressable>
+                ) : null}
+            </View>
+
+            <InventoryFilterBar
+                filter={filter}
+                options={filterOptions}
+                onSelect={setFilter}
+                palette={palette}
+            />
+
             <ProductList
-                products={products}
+                products={filteredProducts}
                 loading={loading}
                 db={db}
                 palette={palette}
+                filter={filter}
+                searchQuery={query}
                 onEditProduct={openEditForm}
                 onPreviewImage={setPreviewUri}
                 onReloadProducts={reloadProducts}

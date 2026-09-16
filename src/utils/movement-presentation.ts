@@ -8,8 +8,12 @@ export type MovementView = {
     productName: string;
     typeLabel: string;
     referenceLabel: string;
+    referenceType: string;
+    referenceId: string;
     dateLabel: string;
     amountText: string;
+    quantityText: string;
+    totalText: string;
     costText: string;
     notes: string | null;
     isOutgoing: boolean;
@@ -33,6 +37,18 @@ const moneyFormatter = new Intl.NumberFormat("es-MX", {
     currency: "MXN",
     maximumFractionDigits: 2,
 });
+
+export function formatQuantity(value: number | null | undefined): string {
+    return quantityFormatter.format(Number(value || 0));
+}
+
+export function formatMoney(value: number | null | undefined): string {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return "—";
+    }
+
+    return moneyFormatter.format(Number(value));
+}
 
 const INCOMING_ICON_COLOR_FALLBACK = "#16A34A";
 const OUTGOING_ICON_COLOR = "#F59E0B";
@@ -136,13 +152,26 @@ export function buildMovementViews(
             }
         }
 
+        const quantity = Number(movement.quantity || 0);
+        const unitCost =
+            movement.unit_cost === null || movement.unit_cost === undefined
+                ? null
+                : Number(movement.unit_cost);
+
         return {
             id: movement.id,
             productName: movement.product_name,
             typeLabel: getMovementLabel(movement.movement_type),
             referenceLabel: getReferenceLabel(movement.reference_type),
+            referenceType: movement.reference_type,
+            referenceId: movement.reference_id,
             dateLabel: formatMovementDate(movement.movement_date),
-            amountText: `${isOutgoing ? "-" : "+"}${quantityFormatter.format(Number(movement.quantity || 0))}`,
+            amountText: `${isOutgoing ? "-" : "+"}${quantityFormatter.format(quantity)}`,
+            quantityText: quantityFormatter.format(quantity),
+            totalText:
+                unitCost === null || !Number.isFinite(unitCost)
+                    ? "—"
+                    : moneyFormatter.format(quantity * unitCost),
             costText:
                 movement.unit_cost === null
                     ? "Sin costo"

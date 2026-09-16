@@ -1,7 +1,8 @@
 import { Colors } from "@/constants/theme";
 import { cn } from "@/utils/cn";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Text, useColorScheme, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Pressable, Text, useColorScheme, View } from "react-native";
 import type { AlertTone } from "./types";
 
 type AlertRowData = {
@@ -12,7 +13,11 @@ type AlertRowData = {
 };
 
 export default function AlertsSection({ lowStock }: { lowStock: number }) {
-    const alerts = lowStock > 0
+    const scheme = useColorScheme();
+    const palette = Colors[scheme === "dark" ? "dark" : "light"];
+    const router = useRouter();
+    const hasAlerts = lowStock > 0;
+    const alerts = hasAlerts
         ? [
             {
                 title: `${lowStock} productos bajo mínimo`,
@@ -53,6 +58,24 @@ export default function AlertsSection({ lowStock }: { lowStock: number }) {
                     />
                 ))}
             </View>
+
+            {hasAlerts ? (
+                <Pressable
+                    onPress={() => {
+                        router.push({
+                            pathname: "/(tabs)/inventory",
+                            params: { filter: "low-stock" },
+                        });
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ver productos con bajo stock en inventario"
+                    className="flex-row items-center justify-center gap-2 rounded-2xl py-3.5 bg-accent"
+                    style={({ pressed }) => pressed ? { opacity: 0.85 } : undefined}
+                >
+                    <Text className="text-button-label text-on-accent">Ver alertas</Text>
+                    <MaterialCommunityIcons name="arrow-right" size={18} color={palette.onAccent} />
+                </Pressable>
+            ) : null}
         </View>
     );
 }
