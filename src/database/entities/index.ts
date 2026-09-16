@@ -10,6 +10,7 @@ export type {
   ProductCreateInput,
   ProductRow,
   ProductUpdateInput,
+  ProductWithMetrics,
 } from "./products/product.entity";
 export type { PurchaseItemRow, PurchaseRow } from "./purchases/purchase.entity";
 export type { SaleItemRow, SaleRow } from "./sales/sale.entity";

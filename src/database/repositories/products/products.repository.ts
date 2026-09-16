@@ -1,34 +1,48 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type {
   ProductCreateInput,
-  ProductRow,
   ProductUpdateInput,
+  ProductWithMetrics,
 } from "../../entities";
 import { createId } from "../../utils/ids";
 import { nowIso } from "../../utils/time";
 
-const PRODUCT_COLUMNS = `
-  id,
-  name,
-  description,
-  image_path,
-  active,
-  current_stock,
-  average_cost,
-  last_cost,
-  created_at,
-  updated_at
+const PRODUCT_WITH_METRICS_COLUMNS = `
+  p.id,
+  p.name,
+  p.description,
+  p.image_path,
+  p.active,
+  COALESCE(csv.current_stock, 0) AS current_stock,
+  COALESCE(acv.average_cost, 0) AS average_cost,
+  COALESCE(lcv.last_cost, 0) AS last_cost,
+  p.created_at,
+  p.updated_at
 `;
 
-export async function listProducts(db: SQLiteDatabase) {
-  return db.getAllAsync<ProductRow>(
-    `SELECT ${PRODUCT_COLUMNS} FROM products ORDER BY name ASC`,
+const PRODUCT_WITH_METRICS_JOIN = `
+  FROM products p
+  LEFT JOIN current_stock_view csv ON csv.product_id = p.id
+  LEFT JOIN average_cost_view acv ON acv.product_id = p.id
+  LEFT JOIN last_cost_view lcv ON lcv.product_id = p.id
+`;
+
+export async function listProducts(
+  db: SQLiteDatabase,
+): Promise<ProductWithMetrics[]> {
+  return db.getAllAsync<ProductWithMetrics>(
+    `SELECT ${PRODUCT_WITH_METRICS_COLUMNS} ${PRODUCT_WITH_METRICS_JOIN}
+      ORDER BY p.name ASC`,
   );
 }
 
-export async function getProductById(db: SQLiteDatabase, id: string) {
-  return db.getFirstAsync<ProductRow>(
-    `SELECT ${PRODUCT_COLUMNS} FROM products WHERE id = $id`,
+export async function getProductById(
+  db: SQLiteDatabase,
+  id: string,
+): Promise<ProductWithMetrics | null> {
+  return db.getFirstAsync<ProductWithMetrics>(
+    `SELECT ${PRODUCT_WITH_METRICS_COLUMNS} ${PRODUCT_WITH_METRICS_JOIN}
+      WHERE p.id = $id`,
     { $id: id },
   );
 }
@@ -48,9 +62,6 @@ export async function createProduct(
         description,
         image_path,
         active,
-        current_stock,
-        average_cost,
-        last_cost,
         created_at,
         updated_at
       ) VALUES (
@@ -59,9 +70,6 @@ export async function createProduct(
         $description,
         $image_path,
         $active,
-        $current_stock,
-        $average_cost,
-        $last_cost,
         $created_at,
         $updated_at
       )
@@ -72,9 +80,6 @@ export async function createProduct(
       $description: input.description ?? null,
       $image_path: input.image_path ?? null,
       $active: input.active ?? 1,
-      $current_stock: input.current_stock ?? 0,
-      $average_cost: input.average_cost ?? 0,
-      $last_cost: input.last_cost ?? 0,
       $created_at: timestamp,
       $updated_at: timestamp,
     },
@@ -103,9 +108,6 @@ export async function updateProduct(
         description = $description,
         image_path = $image_path,
         active = $active,
-        current_stock = $current_stock,
-        average_cost = $average_cost,
-        last_cost = $last_cost,
         updated_at = $updated_at
       WHERE id = $id
     `,
@@ -118,9 +120,6 @@ export async function updateProduct(
           ? input.image_path
           : current.image_path,
       $active: input.active ?? current.active,
-      $current_stock: input.current_stock ?? current.current_stock,
-      $average_cost: input.average_cost ?? current.average_cost,
-      $last_cost: input.last_cost ?? current.last_cost,
       $updated_at: timestamp,
     },
   );

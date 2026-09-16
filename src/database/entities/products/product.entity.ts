@@ -4,11 +4,14 @@ export type ProductRow = {
   description: string | null;
   image_path: string | null;
   active: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductWithMetrics = ProductRow & {
   current_stock: number;
   average_cost: number;
   last_cost: number;
-  created_at: string;
-  updated_at: string;
 };
 
 export type ProductCreateInput = {
@@ -17,15 +20,8 @@ export type ProductCreateInput = {
   description?: string | null;
   image_path?: string | null;
   active?: number;
-  current_stock?: number;
-  average_cost?: number;
-  last_cost?: number;
 };
 
 export type ProductUpdateInput = Partial<
-  Omit<ProductCreateInput, "id"> & {
-    current_stock: number;
-    average_cost: number;
-    last_cost: number;
-  }
+  Omit<ProductCreateInput, "id">
 >;

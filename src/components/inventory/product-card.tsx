@@ -1,29 +1,38 @@
+import type { ThemePalette } from "@/components/index/types";
 import {
     updateProduct,
-    type ProductRow
+    type ProductWithMetrics
 } from "@/database";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { SQLiteDatabase } from "expo-sqlite";
+import { memo } from "react";
 import {
     Pressable,
     Text,
     View
 } from "react-native";
+import { useRouter } from "expo-router";
 
 interface ProductCardProps {
-    product: ProductRow;
+    product: ProductWithMetrics;
     setPreviewUri: (uri: string | null) => void;
-    openEditForm: (product: ProductRow) => void;
+    openEditForm: (product: ProductWithMetrics) => void;
     loadProducts: () => Promise<void>;
-    palette: any;
+    palette: ThemePalette;
     db: SQLiteDatabase;
 }
 
 
 
-export default function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadProducts }: ProductCardProps) {
+function ProductCard({ product, setPreviewUri, openEditForm, palette, db, loadProducts }: ProductCardProps) {
+    const router = useRouter();
+    const hasCosts =
+        Number(product.average_cost || 0) > 0 || Number(product.last_cost || 0) > 0;
 
+    const formatCost = (value: number) => {
+        return hasCosts ? `$${Number(value || 0).toFixed(2)}` : "—";
+    };
 
     const changueActived = async () => {
         let { active, id: productId } = product;
@@ -39,7 +48,7 @@ export default function ProductCard({ product, setPreviewUri, openEditForm, pale
     };
 
     return (
-        <View key={product.id} className="rounded-[20px] border p-4 gap-3.5 bg-surface border-border">
+        <View className="rounded-[20px] border p-4 gap-3.5 bg-surface border-border">
             <View className="flex-row items-center gap-3">
                 {product.image_path ? (
                     <Pressable
@@ -78,18 +87,31 @@ export default function ProductCard({ product, setPreviewUri, openEditForm, pale
                 </View>
             </View>
 
-            <View className="flex-row justify-between gap-2">
-                <View>
+            <View className="flex-row items-end justify-between gap-2">
+                <View className="flex-1">
                     <Text className="text-body-muted text-content-muted">Costo medio</Text>
-                    <Text className="text-button-label text-content">${Number(product.average_cost || 0).toFixed(2)}</Text>
+                    <Text className="text-button-label text-content">
+                        {formatCost(Number(product.average_cost || 0))}
+                    </Text>
                 </View>
-                <View>
+                <View className="flex-1 items-end">
                     <Text className="text-body-muted text-content-muted">Ultimo costo</Text>
-                    <Text className="text-button-label text-content">${Number(product.last_cost || 0).toFixed(2)}</Text>
+                    <Text className="text-[18px] font-bold text-accent">
+                        {formatCost(Number(product.last_cost || 0))}
+                    </Text>
                 </View>
             </View>
 
             <View className="flex-row gap-3">
+                <Pressable
+                    onPress={() => router.push({ pathname: "/product/[id]", params: { id: product.id } } as never)}
+                    hitSlop={8}
+                    pressRetentionOffset={12}
+                    className="flex-1 rounded-xl py-3 items-center justify-center min-h-[44px] bg-accent"
+                    style={({ pressed }) => pressed ? { opacity: 0.8 } : undefined}
+                >
+                    <Text className="text-chip uppercase text-accent">Ficha</Text>
+                </Pressable>
                 <Pressable
                     onPress={() => openEditForm(product)}
                     hitSlop={8}
@@ -112,3 +134,5 @@ export default function ProductCard({ product, setPreviewUri, openEditForm, pale
         </View>
     )
 }
+
+export default memo(ProductCard);

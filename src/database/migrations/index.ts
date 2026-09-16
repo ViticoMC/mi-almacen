@@ -15,6 +15,18 @@ import {
   PRODUCT_IMAGES_MIGRATION_VERSION,
   PRODUCT_IMAGES_SCHEMA_SQL,
 } from "./0002-product-images";
+import {
+  REMOVE_PRODUCT_CACHE_MIGRATION_VERSION,
+  REMOVE_PRODUCT_CACHE_SCHEMA_SQL,
+} from "./0003-remove-product-cache";
+import {
+  SEED_DEMO_PRODUCTS_MIGRATION_VERSION,
+  SEED_DEMO_PRODUCTS_SCHEMA_SQL,
+} from "./0004-seed-demo-products";
+import {
+  UNITS_HARDENING_MIGRATION_VERSION,
+  UNITS_HARDENING_SCHEMA_SQL,
+} from "./0005-units-hardening";
 
 type Migration = {
   version: number;
@@ -33,6 +45,24 @@ const MIGRATIONS: Migration[] = [
     version: PRODUCT_IMAGES_MIGRATION_VERSION,
     up: async (db) => {
       await db.execAsync(PRODUCT_IMAGES_SCHEMA_SQL);
+    },
+  },
+  {
+    version: REMOVE_PRODUCT_CACHE_MIGRATION_VERSION,
+    up: async (db) => {
+      await db.execAsync(REMOVE_PRODUCT_CACHE_SCHEMA_SQL);
+    },
+  },
+  {
+    version: SEED_DEMO_PRODUCTS_MIGRATION_VERSION,
+    up: async (db) => {
+      await db.execAsync(SEED_DEMO_PRODUCTS_SCHEMA_SQL);
+    },
+  },
+  {
+    version: UNITS_HARDENING_MIGRATION_VERSION,
+    up: async (db) => {
+      await db.execAsync(UNITS_HARDENING_SCHEMA_SQL);
     },
   },
 ];

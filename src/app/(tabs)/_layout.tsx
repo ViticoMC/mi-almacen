@@ -13,6 +13,9 @@ export default function TabsLayout() {
         <Tabs
             screenOptions={{
                 headerShown: false,
+                animation: "shift",
+                lazy: true,
+                freezeOnBlur: true,
                 sceneStyle: {
                     backgroundColor: theme.background,
                 },
@@ -94,6 +97,21 @@ export default function TabsLayout() {
                         <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
                             <MaterialCommunityIcons
                                 name="swap-horizontal"
+                                size={(size ?? 22) - 1}
+                                color={focused ? "#FFFFFF" : color}
+                            />
+                        </View>
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="statistics"
+                options={{
+                    title: "Estadisticas",
+                    tabBarIcon: ({ focused, color, size }) => (
+                        <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
+                            <MaterialCommunityIcons
+                                name="chart-box-outline"
                                 size={(size ?? 22) - 1}
                                 color={focused ? "#FFFFFF" : color}
                             />

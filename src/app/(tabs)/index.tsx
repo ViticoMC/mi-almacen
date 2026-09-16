@@ -1,7 +1,5 @@
-import { getDashboardSummary, listRecentMovements } from "@/database";
 import { useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
 import { ScrollView, useColorScheme, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AlertsSection from "@/components/index/alerts-section";
@@ -9,51 +7,12 @@ import DashboardHeader from "@/components/index/dashboard-header";
 import MetricCardsSection from "@/components/index/metric-cards-section";
 import QuickActionsSection from "@/components/index/quick-actions-section";
 import RecentMovementsSection from "@/components/index/recent-movements-section";
-import type { DashboardMetrics, RecentMovement } from "@/components/index/types";
-
-const defaultMetrics: DashboardMetrics = {
-    totalProducts: 0,
-    lowStock: 0,
-    entriesToday: 0,
-    exitsToday: 0,
-};
+import { useDashboard } from "@/hooks/useDashboard";
 
 export default function Index() {
     const scheme = useColorScheme();
     const db = useSQLiteContext();
-    const [metrics, setMetrics] = useState<DashboardMetrics>(defaultMetrics);
-    const [recentMovements, setRecentMovements] = useState<RecentMovement[]>([]);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        async function loadDashboardMetrics() {
-            try {
-                const [summary, movements] = await Promise.all([
-                    getDashboardSummary(db),
-                    listRecentMovements(db, 5),
-                ]);
-
-                if (!isMounted) {
-                    return;
-                }
-                setMetrics(summary);
-                setRecentMovements(movements);
-            } catch (error) {
-                console.warn("No se pudieron cargar las métricas del dashboard:", error);
-                if (isMounted) {
-                    setMetrics(defaultMetrics);
-                    setRecentMovements([]);
-                }
-            }
-        }
-
-        loadDashboardMetrics();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [db]);
+    const { metrics, recentMovements } = useDashboard(db);
 
     return (
         <View className="flex-1 bg-background">

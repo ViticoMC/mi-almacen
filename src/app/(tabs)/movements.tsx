@@ -1,17 +1,22 @@
+import MovementFilterBar from "@/components/movements/movement-filter-bar";
+import MovementList from "@/components/movements/movement-list";
+import DocumentForm from "@/components/movements/document-form";
 import { Colors } from "@/constants/theme";
 import {
     createManualInventoryMovement,
     listMovementsDetailed,
-    listProducts,
     type InventoryMovementDetailedRow,
     type ManualMovementType,
     type MovementFilter,
-    type ProductRow,
 } from "@/database";
+import { forceRefreshProducts, useProducts } from "@/hooks/useProducts";
+import { buildMovementViews } from "@/utils/movement-presentation";
+import { deferUntilInteractions } from "@/utils/interactions";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
     Modal,
     Pressable,
@@ -20,14 +25,13 @@ import {
     TextInput,
     useColorScheme,
     View,
+    type ViewStyle,
 } from "react-native";
+import DropDownPicker from "react-native-dropdown-picker";
 
-const movementFilterOptions: { value: MovementFilter; label: string }[] = [
-    { value: "ALL", label: "Todos" },
-    { value: "IN", label: "Entradas" },
-    { value: "OUT", label: "Salidas" },
-    { value: "ADJUSTMENTS", label: "Ajustes" },
-];
+const INITIAL_MOVEMENT_LIMIT = 60;
+const MOVEMENT_LIMIT_STEP = 60;
+const MAX_MOVEMENT_LIMIT = 240;
 
 const manualMovementOptions: { value: ManualMovementType; label: string }[] = [
     { value: "IN", label: "Entrada" },
@@ -36,191 +40,216 @@ const manualMovementOptions: { value: ManualMovementType; label: string }[] = [
     { value: "ADJUSTMENT_OUT", label: "Ajuste -" },
 ];
 
-const quantityFormatter = new Intl.NumberFormat("es-MX", {
+const summaryFormatter = new Intl.NumberFormat("es-MX", {
     maximumFractionDigits: 2,
 });
 
-const moneyFormatter = new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 2,
-});
-
-function isToday(value: string) {
-    const date = new Date(value);
-    const today = new Date();
-
-    return (
-        date.getFullYear() === today.getFullYear() &&
-        date.getMonth() === today.getMonth() &&
-        date.getDate() === today.getDate()
-    );
-}
-
-function formatMovementDate(value: string) {
-    return new Date(value).toLocaleString("es-MX", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-}
-
-function getMovementLabel(movementType: string) {
-    if (movementType === "IN") {
-        return "Entrada";
-    }
-    if (movementType === "OUT") {
-        return "Salida";
-    }
-    if (movementType === "ADJUSTMENT_IN") {
-        return "Ajuste +";
-    }
-    if (movementType === "ADJUSTMENT_OUT") {
-        return "Ajuste -";
-    }
-    return "Movimiento";
-}
-
-function getReferenceLabel(referenceType: string) {
-    if (referenceType === "PURCHASE") {
-        return "Compra";
-    }
-    if (referenceType === "SALE") {
-        return "Venta";
-    }
-    if (referenceType === "ADJUSTMENT") {
-        return "Ajuste";
-    }
-    if (referenceType === "MANUAL") {
-        return "Manual";
-    }
-    return "Sistema";
-}
+type FetchMode = "initial" | "refresh" | "more";
 
 export default function MovementsScreen() {
     const scheme = useColorScheme();
     const palette = Colors[scheme === "dark" ? "dark" : "light"];
     const db = useSQLiteContext();
-    const [products, setProducts] = useState<ProductRow[]>([]);
+    const router = useRouter();
+    const params = useLocalSearchParams<{ openForm?: string; movementType?: string }>();
+    const { products, loading: productsLoading, ensureProducts } = useProducts(db, { autoLoad: false });
     const [movements, setMovements] = useState<InventoryMovementDetailedRow[]>([]);
     const [filter, setFilter] = useState<MovementFilter>("ALL");
+    const [limit, setLimit] = useState(INITIAL_MOVEMENT_LIMIT);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [movementType, setMovementType] = useState<ManualMovementType>("IN");
-    const [productId, setProductId] = useState<string>("");
+    const [productId, setProductId] = useState<string | null>(null);
     const [quantity, setQuantity] = useState<string>("1");
     const [unitCost, setUnitCost] = useState<string>("");
     const [notes, setNotes] = useState<string>("");
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const firstLoadRef = useRef(true);
+    const loadMoreRef = useRef(false);
 
     const activeProducts = useMemo(
         () => products.filter((product) => Number(product.active) === 1),
         [products],
     );
 
-    const todaySummary = useMemo(() => {
-        let total = 0;
-        let entries = 0;
-        let exits = 0;
-        let adjustments = 0;
-
-        for (const movement of movements) {
-            if (!isToday(movement.movement_date)) {
-                continue;
-            }
-
-            total += 1;
-
-            if (movement.movement_type === "IN" || movement.movement_type === "ADJUSTMENT_IN") {
-                entries += Number(movement.quantity || 0);
-            }
-
-            if (movement.movement_type === "OUT" || movement.movement_type === "ADJUSTMENT_OUT") {
-                exits += Number(movement.quantity || 0);
-            }
-
-            if (movement.movement_type === "ADJUSTMENT_IN" || movement.movement_type === "ADJUSTMENT_OUT") {
-                adjustments += 1;
-            }
-        }
-
-        return { total, entries, exits, adjustments };
-    }, [movements]);
+    const { views, summary: todaySummary } = useMemo(
+        () => buildMovementViews(movements, palette),
+        [movements, palette],
+    );
 
     const selectedProduct = useMemo(
         () => activeProducts.find((product) => product.id === productId) ?? null,
         [activeProducts, productId],
     );
 
-    const loadData = async (targetFilter: MovementFilter) => {
-        try {
-            const [productRows, movementRows] = await Promise.all([
-                listProducts(db),
-                listMovementsDetailed(db, { limit: 140, filter: targetFilter }),
-            ]);
-            setProducts(productRows);
-            setMovements(movementRows);
-        } catch (error) {
-            console.warn("No se pudieron cargar los movimientos:", error);
-            setMovements([]);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const pickerItems = useMemo(
+        () =>
+            activeProducts.map((product) => ({
+                label: `${product.name}  ·  Stock: ${summaryFormatter.format(Number(product.current_stock || 0))}`,
+                value: product.id,
+            })),
+        [activeProducts],
+    );
 
-    useEffect(() => {
-        let isMounted = true;
+    const fetchMovements = useCallback(
+        async (
+            targetFilter: MovementFilter,
+            targetLimit: number,
+            mode: FetchMode = "refresh",
+            isActive: () => boolean = () => true,
+        ): Promise<void> => {
+            if (mode === "more") {
+                setLoadingMore(true);
+            } else {
+                setLoading(true);
+            }
 
-        Promise.all([
-            listProducts(db),
-            listMovementsDetailed(db, { limit: 140, filter }),
-        ])
-            .then(([productRows, movementRows]) => {
-                if (!isMounted) {
+            try {
+                const movementRows = await listMovementsDetailed(db, { limit: targetLimit, filter: targetFilter });
+
+                if (!isActive()) {
                     return;
                 }
-                setProducts(productRows);
+
                 setMovements(movementRows);
-            })
-            .catch((error) => {
+            } catch (error) {
                 console.warn("No se pudieron cargar los movimientos:", error);
-                if (isMounted) {
-                    setMovements([]);
+
+                if (!isActive()) {
+                    return;
                 }
-            })
-            .finally(() => {
-                if (isMounted) {
-                    setLoading(false);
+
+                setMovements([]);
+            } finally {
+                if (!isActive()) {
+                    return;
                 }
-            });
+
+                setLoading(false);
+                setLoadingMore(false);
+            }
+        },
+        [db],
+    );
+
+    useEffect(() => {
+        let isActive = true;
+        const isMore = loadMoreRef.current;
+        loadMoreRef.current = false;
+        const shouldDeferFirstLoad = firstLoadRef.current && !isMore;
+        firstLoadRef.current = false;
+
+        const run = () => {
+            if (isActive) {
+                void fetchMovements(
+                    filter,
+                    limit,
+                    isMore ? "more" : shouldDeferFirstLoad ? "initial" : "refresh",
+                    () => isActive,
+                );
+            }
+        };
+
+        if (shouldDeferFirstLoad) {
+            const cancelDeferredLoad = deferUntilInteractions(run);
+
+            return () => {
+                isActive = false;
+                cancelDeferredLoad();
+            };
+        }
+
+        run();
 
         return () => {
-            isMounted = false;
+            isActive = false;
         };
-    }, [db, filter]);
+    }, [fetchMovements, filter, limit]);
 
-    const openForm = () => {
-        if (!activeProducts.length) {
+    useEffect(() => {
+        if (params.openForm !== "true") {
             return;
         }
 
-        setSubmitError(null);
-        setMovementType("IN");
-        setProductId(activeProducts[0].id);
-        setQuantity("1");
-        setUnitCost("");
-        setNotes("");
-        setIsFormOpen(true);
-    };
+        const validTypes: ManualMovementType[] = ["IN", "OUT", "ADJUSTMENT_IN", "ADJUSTMENT_OUT"];
+        const requestedType = params.movementType;
+        const nextType = validTypes.includes(requestedType as ManualMovementType)
+            ? (requestedType as ManualMovementType)
+            : "IN";
 
-    const closeForm = () => {
+        router.setParams({ openForm: undefined, movementType: undefined });
+
+        Promise.resolve().then(() => {
+            setSubmitError(null);
+            setMovementType(nextType);
+            setProductId(activeProducts[0]?.id ?? null);
+            setQuantity("1");
+            setUnitCost("");
+            setNotes("");
+            setPickerOpen(false);
+            setIsFormOpen(true);
+            void ensureProducts().then((rows) => {
+                const firstActive = rows.find((product) => Number(product.active) === 1);
+
+                if (firstActive) {
+                    setProductId((previous) => previous ?? firstActive.id);
+                }
+            });
+        });
+    }, [params.openForm, params.movementType, activeProducts, ensureProducts, router]);
+
+    const handleFilterChange = useCallback(
+        (nextFilter: MovementFilter) => {
+            if (nextFilter === filter) {
+                return;
+            }
+
+            setFilter(nextFilter);
+            setLimit(INITIAL_MOVEMENT_LIMIT);
+        },
+        [filter],
+    );
+
+    const handleLoadMore = useCallback(() => {
+        if (loading || loadingMore || limit >= MAX_MOVEMENT_LIMIT) {
+            return;
+        }
+
+        loadMoreRef.current = true;
+        setLimit((previous) => Math.min(previous + MOVEMENT_LIMIT_STEP, MAX_MOVEMENT_LIMIT));
+    }, [loading, loadingMore, limit]);
+
+    const openForm = useCallback(
+        (type: ManualMovementType = "IN") => {
+            setSubmitError(null);
+            setMovementType(type);
+            setProductId(activeProducts[0]?.id ?? null);
+            setQuantity("1");
+            setUnitCost("");
+            setNotes("");
+            setPickerOpen(false);
+            setIsFormOpen(true);
+            void ensureProducts().then((rows) => {
+                const firstActive = rows.find((product) => Number(product.active) === 1);
+
+                if (firstActive) {
+                    setProductId((previous) => previous ?? firstActive.id);
+                }
+            });
+        },
+        [activeProducts, ensureProducts],
+    );
+
+    const closeForm = useCallback(() => {
         setIsFormOpen(false);
+        setPickerOpen(false);
         setSubmitError(null);
-    };
+    }, []);
 
-    const submitMovement = async () => {
+    const submitMovement = useCallback(async () => {
         if (!productId) {
             setSubmitError("Selecciona un producto para continuar.");
             return;
@@ -253,162 +282,102 @@ export default function MovementsScreen() {
             });
 
             closeForm();
-            await loadData(filter);
+            forceRefreshProducts();
+            await fetchMovements(filter, limit);
         } catch (error) {
             const message = error instanceof Error ? error.message : "No se pudo registrar el movimiento.";
             setSubmitError(message);
         } finally {
             setSaving(false);
         }
-    };
+    }, [productId, quantity, unitCost, notes, movementType, db, closeForm, filter, limit, fetchMovements]);
+
+    const listHeader = useMemo(
+        () => (
+            <View>
+                <View className="flex-row items-center justify-between mt-9 mb-6 gap-3">
+                    <View className="flex-1 gap-2">
+                        <Text className="text-eyebrow uppercase text-accent">
+                            Operaciones
+                        </Text>
+                        <Text className="text-title text-content">
+                            Movimientos
+                        </Text>
+                        <Text className="text-subtitle text-content-muted max-w-[360px]">
+                            Registra entradas, salidas y ajustes con impacto inmediato en stock.
+                        </Text>
+                    </View>
+                    <Pressable
+                        onPress={() => openForm()}
+                        className="rounded-2xl px-3.5 py-2.5 bg-accent"
+                        style={({ pressed }) => (pressed ? { opacity: 0.8 } : undefined)}
+                    >
+                        <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                    </Pressable>
+                </View>
+
+                <View className="flex-row flex-wrap gap-3 mb-4">
+                    <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
+                        <Text className="text-body-muted text-content-muted">Movimientos hoy</Text>
+                        <Text className="text-metric-value text-content">{todaySummary.total}</Text>
+                    </View>
+                    <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
+                        <Text className="text-body-muted text-content-muted">Entradas hoy</Text>
+                        <Text className="text-metric-value text-accent">+{summaryFormatter.format(todaySummary.entries)}</Text>
+                    </View>
+                    <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
+                        <Text className="text-body-muted text-content-muted">Salidas hoy</Text>
+                        <Text className="text-metric-value text-warning">-{summaryFormatter.format(todaySummary.exits)}</Text>
+                    </View>
+                    <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
+                        <Text className="text-body-muted text-content-muted">Ajustes hoy</Text>
+                        <Text className="text-metric-value text-content">{todaySummary.adjustments}</Text>
+                    </View>
+                </View>
+
+                <MovementFilterBar filter={filter} onSelect={handleFilterChange} palette={palette} />
+            </View>
+        ),
+        [filter, handleFilterChange, openForm, palette, todaySummary],
+    );
 
     return (
-        <View className="flex-1 px-5 pt-6 pb-[92px] bg-background">
+        <View className="flex-1 px-5 pt-6 bg-background">
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-            <View className="flex-row items-center justify-between mt-9 mb-6 gap-3">
-                <View className="flex-1 gap-2">
-                    <Text className="text-eyebrow uppercase text-accent">
-                        Operaciones
-                    </Text>
-                    <Text className="text-title text-content">
-                        Movimientos
-                    </Text>
-                    <Text className="text-subtitle text-content-muted max-w-[360px]">
-                        Registra entradas, salidas y ajustes con impacto inmediato en stock.
-                    </Text>
-                </View>
-                <Pressable
-                    onPress={openForm}
-                    disabled={!activeProducts.length}
-                    className="rounded-2xl px-3.5 py-2.5 bg-accent"
-                    style={({ pressed }) => (
-                        pressed || !activeProducts.length ? { opacity: 0.8 } : undefined
-                    )}
-                >
-                    <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-                </Pressable>
-            </View>
+            <MovementList
+                header={listHeader}
+                views={views}
+                loading={loading}
+                loadingMore={loadingMore}
+                canLoadMore={!loading && !loadingMore && views.length >= limit && limit < MAX_MOVEMENT_LIMIT}
+                onLoadMore={handleLoadMore}
+            />
 
-            <View className="flex-row flex-wrap gap-3 mb-4">
-                <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
-                    <Text className="text-body-muted text-content-muted">Movimientos hoy</Text>
-                    <Text className="text-metric-value text-content">{todaySummary.total}</Text>
-                </View>
-                <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
-                    <Text className="text-body-muted text-content-muted">Entradas hoy</Text>
-                    <Text className="text-metric-value text-accent">+{quantityFormatter.format(todaySummary.entries)}</Text>
-                </View>
-                <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
-                    <Text className="text-body-muted text-content-muted">Salidas hoy</Text>
-                    <Text className="text-metric-value text-warning">-{quantityFormatter.format(todaySummary.exits)}</Text>
-                </View>
-                <View className="flex-1 min-w-[46%] p-4 rounded-[18px] border bg-surface border-border">
-                    <Text className="text-body-muted text-content-muted">Ajustes hoy</Text>
-                    <Text className="text-metric-value text-content">{todaySummary.adjustments}</Text>
-                </View>
-            </View>
-
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerClassName="gap-2 mb-4"
-            >
-                {movementFilterOptions.map((option) => {
-                    const isActive = option.value === filter;
-                    return (
-                        <Pressable
-                            key={option.value}
-                            onPress={() => setFilter(option.value)}
-                            className="px-3.5 py-2 rounded-2xl border"
-                            style={{
-                                backgroundColor: isActive ? palette.accentSoft : palette.surface,
-                                borderColor: isActive ? palette.accent : palette.border,
-                            }}
+            {isFormOpen ? (
+                <Modal transparent visible={isFormOpen} animationType="slide" onRequestClose={closeForm}>
+                    <View className="flex-1 justify-end bg-[rgba(15,23,42,0.45)]">
+                        <View
+                            className="rounded-t-[28px] border pt-[18px] px-[18px] pb-6 bg-surface border-border"
+                            style={
+                                movementType === "IN" || movementType === "OUT"
+                                    ? { height: "92%", maxHeight: "92%" }
+                                    : { maxHeight: "92%", minHeight: "68%" }
+                            }
                         >
-                            <Text className={isActive ? "text-button-label text-accent" : "text-button-label text-content"}>
-                                {option.label}
-                            </Text>
-                        </Pressable>
-                    );
-                })}
-            </ScrollView>
-
-            {loading ? (
-                <View className="rounded-[24px] border p-5 items-center bg-surface border-border">
-                    <Text className="text-body-muted text-content-muted">Cargando movimientos...</Text>
-                </View>
-            ) : movements.length === 0 ? (
-                <View className="rounded-[24px] border p-6 items-center gap-2.5 bg-surface border-border">
-                    <MaterialCommunityIcons name="swap-horizontal" size={28} color={palette.accent} />
-                    <Text className="text-button-label text-content">No hay movimientos para este filtro</Text>
-                    <Text className="text-body-muted text-content-muted text-center">
-                        Registra una operacion manual o cambia el filtro para ver mas actividad.
-                    </Text>
-                </View>
-            ) : (
-                <ScrollView contentContainerClassName="gap-3 pb-4" showsVerticalScrollIndicator={false}>
-                    {movements.map((movement) => {
-                        const isOutgoing =
-                            movement.movement_type === "OUT" || movement.movement_type === "ADJUSTMENT_OUT";
-                        const movementIcon: React.ComponentProps<typeof MaterialCommunityIcons>["name"] =
-                            isOutgoing ? "tray-arrow-up" : "tray-arrow-down";
-
-                        return (
-                            <View key={movement.id} className="rounded-[22px] border p-4 bg-surface border-border gap-2.5">
-                                <View className="flex-row items-start justify-between gap-3">
-                                    <View className="flex-1 flex-row items-start gap-2.5">
-                                        <View className={isOutgoing ? "w-2.5 h-2.5 rounded-full mt-1.5 bg-warning" : "w-2.5 h-2.5 rounded-full mt-1.5 bg-accent"} />
-                                        <MaterialCommunityIcons
-                                            name={movementIcon}
-                                            size={18}
-                                            color={isOutgoing ? "#F59E0B" : palette.accent}
-                                            style={{ marginTop: 2 }}
-                                        />
-                                        <View className="flex-1 gap-1">
-                                            <Text className="text-button-label text-content">{movement.product_name}</Text>
-                                            <Text className="text-body-muted text-content-muted">
-                                                {getMovementLabel(movement.movement_type)} · {getReferenceLabel(movement.reference_type)}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Text className={isOutgoing ? "text-chip uppercase text-warning" : "text-chip uppercase text-accent"}>
-                                        {isOutgoing ? "-" : "+"}
-                                        {quantityFormatter.format(Number(movement.quantity || 0))}
-                                    </Text>
-                                </View>
-
-                                <View className="flex-row items-center justify-between gap-3">
-                                    <Text className="text-body-muted text-content-muted">
-                                        {formatMovementDate(movement.movement_date)}
-                                    </Text>
-                                    <Text className="text-body-muted text-content-muted">
-                                        {movement.unit_cost === null
-                                            ? "Sin costo"
-                                            : moneyFormatter.format(Number(movement.unit_cost || 0))}
-                                    </Text>
-                                </View>
-
-                                {movement.notes ? (
-                                    <Text className="text-body-muted text-content-muted">{movement.notes}</Text>
-                                ) : null}
+                            <View className="flex-row items-center justify-between mb-3 shrink-0">
+                                <Text className="text-section-title text-content">
+                                    {movementType === "IN"
+                                        ? "Nueva entrada (multi-producto)"
+                                        : movementType === "OUT"
+                                          ? "Nueva salida (multi-producto)"
+                                          : "Registrar movimiento"}
+                                </Text>
+                                <Pressable onPress={closeForm}>
+                                    <MaterialCommunityIcons name="close" size={22} color={palette.text} />
+                                </Pressable>
                             </View>
-                        );
-                    })}
-                </ScrollView>
-            )}
 
-            <Modal transparent visible={isFormOpen} animationType="slide" onRequestClose={closeForm}>
-                <View className="flex-1 justify-end bg-[rgba(15,23,42,0.45)]">
-                    <View className="rounded-t-[28px] border pt-[18px] px-[18px] pb-6 min-h-[68%] bg-surface border-border">
-                        <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-section-title text-content">Registrar movimiento</Text>
-                            <Pressable onPress={closeForm}>
-                                <MaterialCommunityIcons name="close" size={22} color={palette.text} />
-                            </Pressable>
-                        </View>
-
-                        <ScrollView contentContainerClassName="gap-4 pb-3" keyboardShouldPersistTaps="handled">
-                            <View className="gap-2">
+                            <View className="gap-2 mb-3 shrink-0">
                                 <Text className="text-body-muted text-content-muted">Tipo de movimiento</Text>
                                 <View className="flex-row flex-wrap gap-2">
                                     {manualMovementOptions.map((option) => {
@@ -432,98 +401,177 @@ export default function MovementsScreen() {
                                 </View>
                             </View>
 
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Producto</Text>
-                                <View className="rounded-[14px] border border-border bg-background p-3 gap-2">
-                                    {activeProducts.map((product) => {
-                                        const isSelected = product.id === productId;
-                                        return (
-                                            <Pressable
-                                                key={product.id}
-                                                onPress={() => setProductId(product.id)}
-                                                className="rounded-xl px-3 py-2 border"
-                                                style={{
-                                                    backgroundColor: isSelected ? palette.accentSoft : palette.surface,
-                                                    borderColor: isSelected ? palette.accent : palette.border,
-                                                }}
-                                            >
-                                                <View className="flex-row items-center justify-between gap-2">
-                                                    <Text className={isSelected ? "text-button-label text-accent" : "text-button-label text-content"}>
-                                                        {product.name}
-                                                    </Text>
-                                                    <Text className="text-chip text-content-muted">
-                                                        Stock: {quantityFormatter.format(Number(product.current_stock || 0))}
-                                                    </Text>
-                                                </View>
-                                            </Pressable>
-                                        );
-                                    })}
-                                </View>
-                            </View>
-
-                            <View className="flex-row gap-3">
-                                <View className="flex-1 gap-2">
-                                    <Text className="text-body-muted text-content-muted">Cantidad</Text>
-                                    <TextInput
-                                        value={quantity}
-                                        onChangeText={setQuantity}
-                                        keyboardType="decimal-pad"
-                                        placeholder="0"
-                                        placeholderTextColor={palette.textMuted}
-                                        className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                    />
-                                </View>
-                                <View className="flex-1 gap-2">
-                                    <Text className="text-body-muted text-content-muted">Costo unitario</Text>
-                                    <TextInput
-                                        value={unitCost}
-                                        onChangeText={setUnitCost}
-                                        keyboardType="decimal-pad"
-                                        placeholder="Opcional"
-                                        placeholderTextColor={palette.textMuted}
-                                        className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                    />
-                                </View>
-                            </View>
-
-                            <View className="gap-2">
-                                <Text className="text-body-muted text-content-muted">Notas</Text>
-                                <TextInput
-                                    value={notes}
-                                    onChangeText={setNotes}
-                                    placeholder={selectedProduct ? `Referencia para ${selectedProduct.name}` : "Referencia"}
-                                    placeholderTextColor={palette.textMuted}
-                                    multiline
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background min-h-[90px]"
-                                    style={{ textAlignVertical: "top" }}
+                            {movementType === "IN" || movementType === "OUT" ? (
+                                <View className="flex-1 min-h-0">
+                                <DocumentForm
+                                    kind={movementType}
+                                    db={db}
+                                    products={activeProducts}
+                                    palette={palette}
+                                    onClose={closeForm}
+                                    onSaved={async () => {
+                                        forceRefreshProducts();
+                                        await fetchMovements(filter, limit);
+                                    }}
                                 />
-                            </View>
-
-                            {submitError ? (
-                                <View className="rounded-xl px-3 py-2.5 bg-danger/10 border border-danger/20">
-                                    <Text className="text-body-muted text-danger">{submitError}</Text>
                                 </View>
-                            ) : null}
-                        </ScrollView>
+                            ) : (
+                                <>
+                            <ScrollView contentContainerClassName="gap-4 pb-3" keyboardShouldPersistTaps="handled">
 
-                        <View className="flex-row gap-3 mt-4">
-                            <Pressable onPress={closeForm} className="flex-1 border rounded-[14px] py-3 items-center border-border">
-                                <Text className="text-button-label text-content">Cancelar</Text>
-                            </Pressable>
-                            <Pressable
-                                onPress={submitMovement}
-                                disabled={saving}
-                                className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent"
-                                style={({ pressed }) => (pressed || saving ? { opacity: 0.8 } : undefined)}
-                            >
-                                <Text className="text-button-label text-accent">
-                                    {saving ? "Guardando..." : "Registrar"}
-                                </Text>
-                            </Pressable>
+                                <View className="gap-2">
+                                    <Text className="text-body-muted text-content-muted">Producto</Text>
+                                    <View style={{ zIndex: pickerOpen ? 5000 : 0, elevation: pickerOpen ? 12 : 0 }}>
+                                        <DropDownPicker
+                                            open={pickerOpen}
+                                            setOpen={setPickerOpen}
+                                            value={productId}
+                                            setValue={setProductId}
+                                            items={pickerItems}
+                                            placeholder={
+                                                productsLoading && activeProducts.length === 0
+                                                    ? "Cargando productos..."
+                                                    : activeProducts.length
+                                                      ? "Selecciona un producto"
+                                                      : "Sin productos activos"
+                                            }
+                                            loading={productsLoading}
+                                            searchable
+                                            searchPlaceholder="Buscar producto"
+                                            listMode="MODAL"
+                                            modalTitle="Selecciona un producto"
+                                            modalTitleStyle={{
+                                                fontSize: 17,
+                                                fontWeight: "600",
+                                                color: palette.text,
+                                            }}
+                                            modalContentContainerStyle={{
+                                                backgroundColor: palette.surfaceStrong,
+                                            }}
+                                            zIndex={5000}
+                                            zIndexInverse={5000}
+                                            theme={scheme === "dark" ? "DARK" : "LIGHT"}
+                                            disabled={!activeProducts.length}
+                                            style={{
+                                                borderRadius: 14,
+                                                borderColor: palette.border,
+                                                backgroundColor: palette.background,
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 6,
+                                                minHeight: 48,
+                                            }}
+                                            dropDownContainerStyle={{
+                                                borderRadius: 14,
+                                                borderColor: palette.border,
+                                                backgroundColor: palette.surfaceStrong,
+                                            }}
+                                            labelStyle={{
+                                                fontSize: 15,
+                                                fontWeight: "600",
+                                                color: palette.text,
+                                            }}
+                                            placeholderStyle={{
+                                                fontSize: 15,
+                                                color: palette.textMuted,
+                                            }}
+                                            textStyle={{
+                                                fontSize: 15,
+                                                color: palette.text,
+                                            }}
+                                            arrowIconStyle={{ tintColor: palette.textMuted } as ViewStyle}
+                                            tickIconStyle={{ tintColor: palette.accent } as ViewStyle}
+                                            selectedItemContainerStyle={{
+                                                backgroundColor: palette.accentSoft,
+                                            }}
+                                            selectedItemLabelStyle={{
+                                                color: palette.accent,
+                                                fontWeight: "600",
+                                            }}
+                                            searchContainerStyle={{
+                                                backgroundColor: palette.surfaceStrong,
+                                                borderBottomColor: palette.border,
+                                            }}
+                                            searchTextInputStyle={{
+                                                borderColor: palette.border,
+                                                backgroundColor: palette.background,
+                                                color: palette.text,
+                                            }}
+                                            searchPlaceholderTextColor={palette.textMuted}
+                                        />
+                                    </View>
+                                    {!productsLoading && activeProducts.length === 0 ? (
+                                        <Text className="text-body-muted text-content-muted">
+                                            Primero crea un producto en Inventario para registrar movimientos.
+                                        </Text>
+                                    ) : null}
+                                </View>
+
+                                <View className="flex-row gap-3">
+                                    <View className="flex-1 gap-2">
+                                        <Text className="text-body-muted text-content-muted">Cantidad</Text>
+                                        <TextInput
+                                            value={quantity}
+                                            onChangeText={setQuantity}
+                                            keyboardType="decimal-pad"
+                                            placeholder="0"
+                                            placeholderTextColor={palette.textMuted}
+                                            className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
+                                        />
+                                    </View>
+                                    <View className="flex-1 gap-2">
+                                        <Text className="text-body-muted text-content-muted">Costo unitario</Text>
+                                        <TextInput
+                                            value={unitCost}
+                                            onChangeText={setUnitCost}
+                                            keyboardType="decimal-pad"
+                                            placeholder="Opcional"
+                                            placeholderTextColor={palette.textMuted}
+                                            className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
+                                        />
+                                    </View>
+                                </View>
+
+                                <View className="gap-2">
+                                    <Text className="text-body-muted text-content-muted">Notas</Text>
+                                    <TextInput
+                                        value={notes}
+                                        onChangeText={setNotes}
+                                        placeholder={selectedProduct ? `Referencia para ${selectedProduct.name}` : "Referencia"}
+                                        placeholderTextColor={palette.textMuted}
+                                        multiline
+                                        className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background min-h-[90px]"
+                                        style={{ textAlignVertical: "top" }}
+                                    />
+                                </View>
+
+                                {submitError ? (
+                                    <View className="rounded-xl px-3 py-2.5 bg-danger/10 border border-danger/20">
+                                        <Text className="text-body-muted text-danger">{submitError}</Text>
+                                    </View>
+                                ) : null}
+                            </ScrollView>
+
+                            <View className="flex-row gap-3 mt-4">
+                                <Pressable onPress={closeForm} className="flex-1 border rounded-[14px] py-3 items-center border-border">
+                                    <Text className="text-button-label text-content">Cancelar</Text>
+                                </Pressable>
+                                <Pressable
+                                    onPress={submitMovement}
+                                    disabled={saving}
+                                    className="flex-1 rounded-2xl px-3.5 py-3 items-center bg-accent"
+                                    style={({ pressed }) => (pressed || saving ? { opacity: 0.8 } : undefined)}
+                                >
+                                    <Text className="text-button-label text-accent">
+                                        {saving ? "Guardando..." : "Registrar"}
+                                    </Text>
+                                </Pressable>
+                            </View>
+                                </>
+                            )}
                         </View>
                     </View>
-                </View>
-            </Modal>
+                </Modal>
+            ) : null}
         </View>
     );
 }

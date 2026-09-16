@@ -1,3 +1,4 @@
+import type { ThemePalette } from '@/components/index/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Modal, Pressable, View } from 'react-native';
@@ -5,7 +6,7 @@ import { Modal, Pressable, View } from 'react-native';
 interface ModalPreviewImageProps {
     previewUri: string | null;
     setPreviewUri: (uri: string | null) => void;
-    palette: any;
+    palette: ThemePalette;
 }
 
 export default function ModalPreviewImage({ previewUri, setPreviewUri, palette }: ModalPreviewImageProps) {

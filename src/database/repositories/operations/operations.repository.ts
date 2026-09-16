@@ -1,21 +1,75 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import type { InventoryMovementRow, ProductRow } from "../../entities";
+import type {
+  InventoryMovementRow,
+  ProductWithMetrics,
+} from "../../entities";
 import { createId } from "../../utils/ids";
 import { nowIso } from "../../utils/time";
 import { getProductById } from "../products/products.repository";
 
-const PRODUCT_COLUMNS = `
-  id,
-  name,
-  description,
-  image_path,
-  active,
-  current_stock,
-  average_cost,
-  last_cost,
-  created_at,
-  updated_at
-`;
+type ResolvedUnit = {
+  unit_id: string;
+  factor: number;
+};
+
+/**
+ * Resuelve la presentación contra la BD y congela su factor.
+ * Si el producto aún no tiene presentaciones (datos legacy), crea
+ * una unidad base "Unidad x1" al vuelo para no bloquear la operación.
+ */
+async function resolveItemUnit(
+  db: SQLiteDatabase,
+  productId: string,
+  requestedUnitId: string | null | undefined,
+): Promise<ResolvedUnit> {
+  if (requestedUnitId) {
+    const unit = await db.getFirstAsync<{ id: string; product_id: string; factor: number }>(
+      `SELECT id, product_id, factor FROM product_units WHERE id = $id`,
+      { $id: requestedUnitId },
+    );
+    if (!unit) {
+      throw new Error("La presentación seleccionada ya no existe. Elige otra.");
+    }
+    if (unit.product_id !== productId) {
+      throw new Error("La presentación no pertenece a este producto.");
+    }
+    const factor = Number(unit.factor);
+    if (!Number.isFinite(factor) || factor <= 0) {
+      throw new Error("La presentación está mal configurada. Revísala en la ficha del producto.");
+    }
+    return { unit_id: unit.id, factor };
+  }
+
+  const base = await db.getFirstAsync<{ id: string; factor: number }>(
+    `SELECT id, factor FROM product_units WHERE product_id = $product_id AND is_base = 1 LIMIT 1`,
+    { $product_id: productId },
+  );
+  if (base) {
+    return { unit_id: base.id, factor: Number(base.factor) || 1 };
+  }
+
+  const anyUnit = await db.getFirstAsync<{ id: string; factor: number }>(
+    `SELECT id, factor FROM product_units WHERE product_id = $product_id LIMIT 1`,
+    { $product_id: productId },
+  );
+  if (anyUnit) {
+    return { unit_id: anyUnit.id, factor: Number(anyUnit.factor) || 1 };
+  }
+
+  const newId = createId("unit");
+  await db.runAsync(
+    `INSERT INTO product_units (id, product_id, name, factor, is_base, created_at)
+     VALUES ($id, $product_id, $name, $factor, 1, $created_at)`,
+    {
+      $id: newId,
+      $product_id: productId,
+      $name: "Unidad",
+      $factor: 1,
+      $created_at: nowIso(),
+    },
+  );
+  return { unit_id: newId, factor: 1 };
+}
 
 export type DashboardSummary = {
   totalProducts: number;
@@ -101,7 +155,9 @@ export async function getDashboardSummary(
     `
     SELECT
       (SELECT COUNT(*) FROM products WHERE active = 1) AS total_products,
-      (SELECT COUNT(*) FROM products WHERE active = 1 AND current_stock <= 10) AS low_stock,
+      (SELECT COUNT(*) FROM products p
+        LEFT JOIN current_stock_view csv ON csv.product_id = p.id
+        WHERE p.active = 1 AND COALESCE(csv.current_stock, 0) <= 10) AS low_stock,
       COALESCE((
         SELECT SUM(quantity)
         FROM inventory_movements
@@ -134,9 +190,27 @@ export async function getDashboardSummary(
 export async function listLowStockProducts(
   db: SQLiteDatabase,
   threshold = 10,
-): Promise<ProductRow[]> {
-  return db.getAllAsync<ProductRow>(
-    `SELECT ${PRODUCT_COLUMNS} FROM products WHERE active = 1 AND current_stock <= $threshold ORDER BY current_stock ASC, name ASC`,
+): Promise<ProductWithMetrics[]> {
+  return db.getAllAsync<ProductWithMetrics>(
+    `
+    SELECT
+      p.id,
+      p.name,
+      p.description,
+      p.image_path,
+      p.active,
+      COALESCE(csv.current_stock, 0) AS current_stock,
+      COALESCE(acv.average_cost, 0) AS average_cost,
+      COALESCE(lcv.last_cost, 0) AS last_cost,
+      p.created_at,
+      p.updated_at
+    FROM products p
+    LEFT JOIN current_stock_view csv ON csv.product_id = p.id
+    LEFT JOIN average_cost_view acv ON acv.product_id = p.id
+    LEFT JOIN last_cost_view lcv ON lcv.product_id = p.id
+    WHERE p.active = 1 AND COALESCE(csv.current_stock, 0) <= $threshold
+    ORDER BY current_stock ASC, name ASC
+    `,
     { $threshold: threshold },
   );
 }
@@ -237,16 +311,6 @@ export async function createManualInventoryMovement(
       ? null
       : Number(inputUnitCost);
 
-  let nextAverageCost = Number(product.average_cost || 0);
-  let nextLastCost = Number(product.last_cost || 0);
-
-  if (isIncoming && unitCost !== null) {
-    const weightedCost = nextAverageCost * currentStock;
-    nextAverageCost =
-      nextStock === 0 ? 0 : (weightedCost + unitCost * quantity) / nextStock;
-    nextLastCost = unitCost;
-  }
-
   const referenceType = isAdjustment ? "ADJUSTMENT" : "MANUAL";
   const referenceId = isAdjustment
     ? createId("adjustment")
@@ -304,24 +368,6 @@ export async function createManualInventoryMovement(
         },
       );
     }
-
-    await db.runAsync(
-      `
-        UPDATE products SET
-          current_stock = $current_stock,
-          average_cost = $average_cost,
-          last_cost = $last_cost,
-          updated_at = $updated_at
-        WHERE id = $id
-      `,
-      {
-        $id: input.product_id,
-        $current_stock: nextStock,
-        $average_cost: nextAverageCost,
-        $last_cost: nextLastCost,
-        $updated_at: nowIso(),
-      },
-    );
 
     await db.runAsync(
       `
@@ -433,11 +479,18 @@ export async function createPurchase(db: SQLiteDatabase, input: PurchaseDraft) {
         throw new Error(`No existe el producto ${item.product_id}.`);
       }
 
-      const factor = Number(item.factor ?? 1);
+      const resolved = await resolveItemUnit(db, item.product_id, item.unit_id);
+      const factor = resolved.factor;
       const quantity = Number(item.quantity || 0);
       const unitCost = Number(item.unit_cost || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Cantidad inválida para ${product.name}.`);
+      }
+      if (!Number.isFinite(unitCost) || unitCost < 0) {
+        throw new Error(`Costo inválido para ${product.name}.`);
+      }
       const inventoryQuantity = quantity * factor;
-      const baseUnitCost = factor === 0 ? unitCost : unitCost / factor;
+      const baseUnitCost = unitCost / factor;
       const itemId = createId("purchase-item");
       const itemTotal = quantity * unitCost;
 
@@ -469,38 +522,12 @@ export async function createPurchase(db: SQLiteDatabase, input: PurchaseDraft) {
           $id: itemId,
           $purchase_id: purchaseId,
           $product_id: item.product_id,
-          $unit_id: item.unit_id,
+          $unit_id: resolved.unit_id,
           $quantity: quantity,
           $factor: factor,
           $inventory_quantity: inventoryQuantity,
           $unit_cost: unitCost,
           $total: itemTotal,
-        },
-      );
-
-      const nextStock = Number(product.current_stock || 0) + inventoryQuantity;
-      const weightedCost =
-        Number(product.average_cost || 0) * Number(product.current_stock || 0);
-      const nextAverageCost =
-        nextStock === 0
-          ? 0
-          : (weightedCost + baseUnitCost * inventoryQuantity) / nextStock;
-
-      await db.runAsync(
-        `
-          UPDATE products SET
-            current_stock = $current_stock,
-            average_cost = $average_cost,
-            last_cost = $last_cost,
-            updated_at = $updated_at
-          WHERE id = $id
-        `,
-        {
-          $current_stock: nextStock,
-          $average_cost: nextAverageCost,
-          $last_cost: baseUnitCost,
-          $updated_at: nowIso(),
-          $id: item.product_id,
         },
       );
 
@@ -569,21 +596,43 @@ export async function createSale(db: SQLiteDatabase, input: SaleDraft) {
   let subtotal = 0;
 
   await db.withTransactionAsync(async () => {
-    for (const item of input.items) {
+    const requiredByProduct = new Map<string, { needed: number; name: string }>();
+    const resolvedByIndex: ResolvedUnit[] = [];
+    for (let index = 0; index < input.items.length; index += 1) {
+      const item = input.items[index];
       const product = await getProductById(db, item.product_id);
 
       if (!product) {
         throw new Error(`No existe el producto ${item.product_id}.`);
       }
 
-      const factor = Number(item.factor ?? 1);
-      const inventoryQuantity = Number(item.quantity || 0) * factor;
-
-      if (Number(product.current_stock || 0) < inventoryQuantity) {
-        throw new Error(`Stock insuficiente para ${product.name}.`);
+      const resolved = await resolveItemUnit(db, item.product_id, item.unit_id);
+      resolvedByIndex[index] = resolved;
+      const quantity = Number(item.quantity || 0);
+      const unitPrice = Number(item.unit_price || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Cantidad inválida para ${product.name}.`);
       }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error(`Precio inválido para ${product.name}.`);
+      }
+      const inventoryQuantity = quantity * resolved.factor;
 
-      subtotal += Number(item.unit_price || 0) * Number(item.quantity || 0);
+      const current = requiredByProduct.get(item.product_id) ?? {
+        needed: 0,
+        name: product.name,
+      };
+      current.needed += inventoryQuantity;
+      requiredByProduct.set(item.product_id, current);
+
+      subtotal += unitPrice * quantity;
+    }
+
+    for (const [productId, requirement] of requiredByProduct) {
+      const product = await getProductById(db, productId);
+      if (Number(product?.current_stock || 0) < requirement.needed) {
+        throw new Error(`Stock insuficiente para ${requirement.name}.`);
+      }
     }
 
     await db.runAsync(
@@ -614,14 +663,16 @@ export async function createSale(db: SQLiteDatabase, input: SaleDraft) {
       },
     );
 
-    for (const item of input.items) {
+    for (let index = 0; index < input.items.length; index += 1) {
+      const item = input.items[index];
       const product = await getProductById(db, item.product_id);
 
       if (!product) {
         throw new Error(`No existe el producto ${item.product_id}.`);
       }
 
-      const factor = Number(item.factor ?? 1);
+      const resolved = resolvedByIndex[index] ?? (await resolveItemUnit(db, item.product_id, item.unit_id));
+      const factor = resolved.factor;
       const inventoryQuantity = Number(item.quantity || 0) * factor;
       const unitPrice = Number(item.unit_price || 0);
       const total = unitPrice * Number(item.quantity || 0);
@@ -658,31 +709,13 @@ export async function createSale(db: SQLiteDatabase, input: SaleDraft) {
           $id: itemId,
           $sale_id: saleId,
           $product_id: item.product_id,
-          $unit_id: item.unit_id,
+          $unit_id: resolved.unit_id,
           $quantity: Number(item.quantity || 0),
           $factor: factor,
           $inventory_quantity: inventoryQuantity,
           $unit_price: unitPrice,
           $cost_at_sale: costAtSale,
           $total: total,
-        },
-      );
-
-      const nextStock = Number(product.current_stock || 0) - inventoryQuantity;
-
-      await db.runAsync(
-        `
-          UPDATE products SET
-            current_stock = $current_stock,
-            last_cost = $last_cost,
-            updated_at = $updated_at
-          WHERE id = $id
-        `,
-        {
-          $current_stock: nextStock,
-          $last_cost: Number(product.last_cost || 0),
-          $updated_at: nowIso(),
-          $id: item.product_id,
         },
       );
 

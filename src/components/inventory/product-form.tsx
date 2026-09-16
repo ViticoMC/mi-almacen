@@ -1,3 +1,4 @@
+import type { ThemePalette } from '@/components/index/types';
 import {
     createProduct,
     type ProductRow,
@@ -19,11 +20,7 @@ import {
 const emptyForm = {
     name: "",
     description: "",
-    current_stock: "0",
-    average_cost: "0",
-    last_cost: "0",
     image_uri: null as string | null,
-
 };
 
 type ProductFormState = typeof emptyForm;
@@ -31,7 +28,7 @@ type ProductFormState = typeof emptyForm;
 interface ProductFormProps {
     isFormOpen: boolean,
     closeForm: () => void
-    palette: any
+    palette: ThemePalette
     product: ProductRow | null
     db: SQLiteDatabase
     loadProducts: () => Promise<void>
@@ -50,9 +47,6 @@ export default function ProductForm({
         ? {
             name: product.name,
             description: product.description ?? "",
-            current_stock: String(product.current_stock),
-            average_cost: String(product.average_cost),
-            last_cost: String(product.last_cost),
             image_uri: product.image_path,
         }
         : emptyForm;
@@ -137,9 +131,6 @@ export default function ProductForm({
         const nextProduct = {
             name: form.name.trim(),
             description: form.description.trim() || null,
-            current_stock: Number(form.current_stock) || 0,
-            average_cost: Number(form.average_cost) || 0,
-            last_cost: Number(form.last_cost) || 0,
         };
 
         if (!nextProduct.name) {
@@ -265,41 +256,13 @@ export default function ProductForm({
                             />
                         </View>
 
-                        <View className="flex-row gap-3">
-                            <View className="flex-1 gap-2">
-                                <Text className="text-body-muted text-content-muted">Stock</Text>
-                                <TextInput
-                                    value={form.current_stock}
-                                    onChangeText={(value) => setForm((prev) => ({ ...prev, current_stock: value }))}
-                                    keyboardType="numeric"
-                                    placeholder="0"
-                                    placeholderTextColor={palette.textMuted}
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                />
-                            </View>
-                            <View className="flex-1 gap-2">
-                                <Text className="text-body-muted text-content-muted">Costo medio</Text>
-                                <TextInput
-                                    value={form.average_cost}
-                                    onChangeText={(value) => setForm((prev) => ({ ...prev, average_cost: value }))}
-                                    keyboardType="decimal-pad"
-                                    placeholder="0"
-                                    placeholderTextColor={palette.textMuted}
-                                    className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                                />
-                            </View>
-                        </View>
-
-                        <View className="gap-2">
-                            <Text className="text-body-muted text-content-muted">Ultimo costo</Text>
-                            <TextInput
-                                value={form.last_cost}
-                                onChangeText={(value) => setForm((prev) => ({ ...prev, last_cost: value }))}
-                                keyboardType="decimal-pad"
-                                placeholder="0"
-                                placeholderTextColor={palette.textMuted}
-                                className="border border-border rounded-[14px] px-3 py-3 text-[15px] text-content bg-background"
-                            />
+                        <View className="rounded-xl px-3.5 py-3 gap-1 bg-accent-soft">
+                            <Text className="text-body-muted text-content-muted">
+                                El stock y los costos se registran desde Movimientos.
+                            </Text>
+                            <Text className="text-body-muted text-content-muted">
+                                Registra una Entrada para darle stock inicial al producto.
+                            </Text>
                         </View>
                     </ScrollView>
 
