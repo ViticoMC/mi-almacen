@@ -45,3 +45,7 @@ example
 
 #Agents skills 
 .agents
+
+#database
+dataBase.sql
+miAlmacen.pgerd
