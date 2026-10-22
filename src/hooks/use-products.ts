@@ -7,11 +7,18 @@ import {
 } from "@/database/repositories/products.repository";
 import type { Product } from "@/database/types";
 
-export function useProducts(options: { search?: string; lowStockOnly?: boolean } = {}) {
+export function useProducts(
+  options: {
+    search?: string;
+    lowStockOnly?: boolean;
+    includeArchived?: boolean;
+  } = {},
+) {
   const db = useSQLiteContext();
   const { revision } = useDataRevision();
   const search = options.search ?? "";
   const lowStockOnly = options.lowStockOnly ?? false;
+  const includeArchived = options.includeArchived ?? false;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +27,7 @@ export function useProducts(options: { search?: string; lowStockOnly?: boolean }
   useEffect(() => {
     let active = true;
 
-    listProducts(db, { search, lowStockOnly })
+    listProducts(db, { search, lowStockOnly, includeArchived })
       .then((rows) => {
         if (!active) return;
         setProducts(rows);
@@ -39,7 +46,7 @@ export function useProducts(options: { search?: string; lowStockOnly?: boolean }
     return () => {
       active = false;
     };
-  }, [db, revision, search, lowStockOnly]);
+  }, [db, includeArchived, revision, search, lowStockOnly]);
 
   return { products, loading, error };
 }

@@ -12,10 +12,13 @@ import {
   type ProductRow,
 } from "./products.repository";
 
+export type SalePriceStrategy = "margin" | "keep";
+
 export interface PurchaseInput {
   productId: string;
   quantity: number;
   total: number;
+  salePriceStrategy: SalePriceStrategy;
 }
 
 export interface PurchasePreview {
@@ -26,9 +29,11 @@ export interface PurchasePreview {
   previousCost: number | null;
   newCost: number;
   previousSalePrice: number | null;
-  newSalePrice: number | null;
   marginPercent: number;
-  effectiveMargin: number | null;
+  marginSalePrice: number | null;
+  marginEffectiveMargin: number | null;
+  keptEffectiveMargin: number | null;
+  canKeepPrice: boolean;
 }
 
 export interface PurchaseListItem extends Purchase {
@@ -77,9 +82,13 @@ export function buildPurchasePreview(
   const safeTotal = roundMoney(total);
   const unitCost =
     safeQuantity > 0 && safeTotal > 0 ? roundMoney(safeTotal / safeQuantity) : 0;
-  const newSalePrice =
+  const marginSalePrice =
     unitCost > 0 && product.marginPercent > 0
       ? calculateSalePrice(unitCost, product.marginPercent)
+      : null;
+  const keptEffectiveMargin =
+    unitCost > 0 && product.salePrice != null && product.salePrice >= 0
+      ? effectiveMargin(unitCost, product.salePrice)
       : null;
 
   return {
@@ -90,10 +99,15 @@ export function buildPurchasePreview(
     previousCost: product.currentPrice,
     newCost: unitCost,
     previousSalePrice: product.salePrice,
-    newSalePrice,
     marginPercent: product.marginPercent,
-    effectiveMargin:
-      newSalePrice != null ? effectiveMargin(unitCost, newSalePrice) : null,
+    marginSalePrice,
+    marginEffectiveMargin:
+      marginSalePrice != null
+        ? effectiveMargin(unitCost, marginSalePrice)
+        : null,
+    keptEffectiveMargin,
+    canKeepPrice:
+      keptEffectiveMargin != null && keptEffectiveMargin < 30,
   };
 }
 
@@ -149,10 +163,23 @@ export async function registerPurchase(
       throw new Error("El costo unitario debe ser mayor a cero.");
     }
 
-    const newSalePrice =
-      product.marginPercent > 0
-        ? calculateSalePrice(unitCost, product.marginPercent)
-        : null;
+    let newSalePrice: number | null;
+    if (input.salePriceStrategy === "keep") {
+      if (product.salePrice == null) {
+        throw new Error("El producto no tiene un precio de salida para mantener.");
+      }
+      if (effectiveMargin(unitCost, product.salePrice) >= 30) {
+        throw new Error(
+          "Mantener el precio actual supera el margen máximo del 30%. Recalcula el precio.",
+        );
+      }
+      newSalePrice = product.salePrice;
+    } else {
+      newSalePrice =
+        product.marginPercent > 0
+          ? calculateSalePrice(unitCost, product.marginPercent)
+          : null;
+    }
     const newStock = roundQuantity(product.stock + quantity);
     const id = createId("pur");
     const now = Date.now();

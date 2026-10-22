@@ -8,6 +8,8 @@ export const palette = {
   onAccent: "#ffffff",
   accentSoft: "#f1e9df",
   border: "#e8e2d8",
+  dangerSoft: "#fbf0ed",
+  dangerBorder: "#e8c9c1",
   shadow: "rgba(38, 35, 30, 0.07)",
   success: "#4e7a5a",
   warning: "#a9762e",

@@ -14,6 +14,8 @@ module.exports = {
         "on-accent": "var(--on-accent)",
         "accent-soft": "var(--accent-soft)",
         border: "var(--border)",
+        "danger-soft": "var(--danger-soft)",
+        "danger-border": "var(--danger-border)",
         shadow: "var(--shadow)",
         success: "#4e7a5a",
         warning: "#a9762e",

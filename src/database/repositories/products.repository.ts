@@ -54,10 +54,18 @@ export function mapProductRow(row: ProductRow): Product {
 
 export async function listProducts(
   db: SQLiteDatabase,
-  options: { search?: string; lowStockOnly?: boolean } = {},
+  options: {
+    search?: string;
+    lowStockOnly?: boolean;
+    includeArchived?: boolean;
+  } = {},
 ): Promise<Product[]> {
-  const clauses = ["archived_at IS NULL"];
+  const clauses: string[] = [];
   const params: (string | number)[] = [];
+
+  if (!options.includeArchived) {
+    clauses.push("archived_at IS NULL");
+  }
 
   const search = options.search?.trim();
   if (search) {
@@ -69,8 +77,9 @@ export async function listProducts(
     clauses.push("min_stock > 0 AND stock <= min_stock");
   }
 
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = await db.getAllAsync<ProductRow>(
-    `SELECT * FROM products WHERE ${clauses.join(" AND ")} ORDER BY name COLLATE NOCASE ASC`,
+    `SELECT * FROM products ${where} ORDER BY name COLLATE NOCASE ASC`,
     params,
   );
 

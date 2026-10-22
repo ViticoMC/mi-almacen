@@ -1,6 +1,5 @@
 import { AppText } from "@/components/ui";
 import { usePalette } from "@/theme/colors";
-import { cn } from "@/utils/cn";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
@@ -67,19 +66,17 @@ function AppTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps
             style={styles.item}
           >
             <View
-              className={cn(
-                "items-center justify-center gap-0.5 rounded-full py-1.5",
-                focused ? "bg-accent-soft" : "bg-transparent",
-              )}
-              style={styles.pill}
+              style={[
+                styles.tabBackground,
+                {
+                  backgroundColor: focused ? palette.accentSoft : "transparent",
+                },
+              ]}
             >
               {options.tabBarIcon?.({ focused, color, size: 22 })}
               <AppText
                 variant="caption"
-                className={cn(
-                  "text-[10px] font-semibold",
-                  focused ? "text-accent" : "text-content-muted",
-                )}
+                style={[styles.label, { color }]}
                 numberOfLines={1}
               >
                 {label}
@@ -104,9 +101,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 3,
     marginBottom: 4,
   },
-  pill: {
-    borderRadius: 16,
-    borderCurve: "continuous",
+  tabBackground: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+    paddingVertical: 6,
+  },
+  label: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
 });
 
@@ -120,7 +125,7 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: palette.background },
         headerTintColor: palette.content,
         headerTitleStyle: { fontWeight: "700" },
-        headerShadowVisible: false,
+        headerShadowVisible: true,
         sceneStyle: { backgroundColor: palette.background },
       }}
     >

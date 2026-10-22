@@ -18,18 +18,23 @@ import { cn } from "@/utils/cn";
 export function ProductPicker({
   visible,
   selectedId,
+  includeArchived = false,
   onClose,
   onSelect,
 }: {
   visible: boolean;
   selectedId?: string;
+  includeArchived?: boolean;
   onClose: () => void;
   onSelect: (product: Product) => void;
 }) {
   const palette = usePalette();
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const { products, loading } = useProducts({ search: deferredSearch });
+  const { products, loading } = useProducts({
+    search: deferredSearch,
+    includeArchived,
+  });
 
   return (
     <Modal
@@ -78,6 +83,7 @@ export function ProductPicker({
               <AppText variant="caption">
                 {formatQuantity(item.stock)} {item.unit} · costo{" "}
                 {formatMoney(item.currentPrice)}
+                {item.archivedAt ? " · archivado" : ""}
               </AppText>
             </Pressable>
           )}

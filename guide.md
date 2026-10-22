@@ -32,7 +32,7 @@ La prioridad es la simplicidad: pocos campos, pocos pasos, una interfaz limpia y
 | Valor del stock | Se muestran valor a costo y valor potencial a venta |
 | Stock negativo | Prohibido |
 | Borrado de productos | Suave, para conservar historial |
-| Recalcular salida | Sí: al cambiar el costo, el precio de salida se recalcula con el margen guardado |
+| Recalcular salida | Al cambiar el costo se elige entre recalcular con el margen guardado o mantener el precio actual |
 
 ## 3. Modelo de datos
 
@@ -108,24 +108,24 @@ Se registran solo: nombre, pesaje/unidad y stock mínimo. Los precios nacen en `
 
 1. El usuario ingresa producto, cantidad y total pagado.
 2. `unit_cost = round(total / quantity)`.
-3. Antes de confirmar, la interfaz muestra:
-   - costo anterior,
-   - costo nuevo por unidad,
-   - margen definido,
-   - **precio de salida nuevo** calculado con ese margen.
-4. Al confirmar, en una sola transacción:
+3. Antes de confirmar, la interfaz muestra costo anterior, costo nuevo por unidad, margen definido y las dos opciones de precio de salida:
+   - **recalcular** con el margen guardado (redondeando al múltiplo de 5 superior inmediato), o
+   - **mantener** el precio de salida actual.
+4. Mantener el precio solo se permite si el margen efectivo resultante es menor a 30%; si es negativo se advierte.
+5. Al confirmar, en una sola transacción:
    - `last_price = current_price`
    - `current_price = unit_cost`
-   - `sale_price = calcularPrecioSalida(unit_cost, margin_percent)` si el margen es mayor que cero
+   - `sale_price` = precio elegido (recalculado o mantenido)
    - `stock = stock + quantity`
    - se guarda la compra con los valores anteriores y nuevos.
 
 ### 4.3 Margen y precio de salida
 
 - El margen se ingresa como porcentaje entre `0` y `29.9`.
-- `precio = round(costo * (1 + margen / 100))`.
+- `precio = costo * (1 + margen / 100)`, redondeado al **múltiplo de 5 superior inmediato**.
 - La interfaz muestra el margen efectivo después del redondeo.
-- Si el margen efectivo resultante es `>= 30%`, se reduce el precio en 1 peso hasta cumplir la regla.
+- Si el múltiplo superior alcanza o supera `30%` de margen efectivo, se usa el múltiplo de 5 inferior más cercano que cumpla la regla.
+- Con margen `0` el precio de salida es el costo redondeado, sin forzar múltiplo de 5.
 - También se puede escribir el precio de salida directamente; la interfaz muestra el margen resultante y lo limita a menos de 30%.
 
 ### 4.4 Registrar venta
@@ -273,8 +273,8 @@ src/
 - [x] Módulo 0 — Base.
 - [x] Módulo 1 — Productos.
 - [x] Módulo 2 — Compras.
-- [ ] Módulo 3 — Ventas.
-- [ ] Módulo 4 — Ajustes.
-- [ ] Módulo 5 — Inicio y estadísticas.
-- [ ] Módulo 6 — Historial.
+- [x] Módulo 3 — Ventas.
+- [x] Módulo 4 — Ajustes.
+- [x] Módulo 5 — Inicio y estadísticas.
+- [x] Módulo 6 — Historial.
 - [ ] Módulo 7 — QA y pulido.

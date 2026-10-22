@@ -53,6 +53,26 @@ export default function RootLayout() {
                 title: "Registrar compra",
               }}
             />
+            <Stack.Screen
+              name="sale/new"
+              options={{
+                headerShown: true,
+                presentation: "modal",
+                title: "Registrar venta",
+              }}
+            />
+            <Stack.Screen
+              name="adjustment/new"
+              options={{
+                headerShown: true,
+                presentation: "modal",
+                title: "Ajustar stock",
+              }}
+            />
+            <Stack.Screen
+              name="history/[type]/[id]"
+              options={{ headerShown: true, title: "Detalle" }}
+            />
             <Stack.Screen name="+not-found" />
           </Stack>
         </DatabaseProvider>

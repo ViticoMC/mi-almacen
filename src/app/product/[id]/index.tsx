@@ -161,10 +161,30 @@ export default function ProductDetailScreen() {
 
         <View className="gap-3">
           <Button
+            label="Registrar venta"
+            onPress={() =>
+              router.push({
+                pathname: "/sale/new",
+                params: { productId: productId },
+              })
+            }
+          />
+          <Button
             label="Registrar compra"
+            variant="secondary"
             onPress={() =>
               router.push({
                 pathname: "/purchase/new",
+                params: { productId: productId },
+              })
+            }
+          />
+          <Button
+            label="Ajustar stock"
+            variant="outline"
+            onPress={() =>
+              router.push({
+                pathname: "/adjustment/new",
                 params: { productId: productId },
               })
             }

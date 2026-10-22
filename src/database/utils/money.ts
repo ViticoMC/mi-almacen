@@ -16,12 +16,33 @@ export function effectiveMargin(cost: number, price: number): number {
 
 export function calculateSalePrice(cost: number, marginPercent: number): number {
   if (cost <= 0) return 0;
+
   const margin = clampMargin(marginPercent);
-  let price = roundMoney(cost * (1 + margin / 100));
-  while (price > 0 && effectiveMargin(cost, price) >= 30) {
-    price -= 1;
+  const raw = cost * (1 + margin / 100);
+
+  if (margin === 0) {
+    return roundMoney(raw);
   }
-  return price;
+
+  const roundedUp = Math.ceil(raw / 5) * 5;
+
+  if (roundedUp > 0 && effectiveMargin(cost, roundedUp) < 30) {
+    return roundedUp;
+  }
+
+  let previousMultiple = roundedUp - 5;
+  while (previousMultiple > 0 && effectiveMargin(cost, previousMultiple) >= 30) {
+    previousMultiple -= 5;
+  }
+  if (previousMultiple > 0) {
+    return previousMultiple;
+  }
+
+  let fallback = roundMoney(raw);
+  while (fallback > 0 && effectiveMargin(cost, fallback) >= 30) {
+    fallback -= 1;
+  }
+  return fallback;
 }
 
 export function formatMoney(value: number | null | undefined): string {

@@ -4,6 +4,7 @@ import { AppText, Badge, Card, MoneyText } from "@/components/ui";
 import type { Product } from "@/database/types";
 import { formatQuantity } from "@/database/utils/quantity";
 import { usePalette } from "@/theme/colors";
+import { cn } from "@/utils/cn";
 
 export function ProductRow({
   product,
@@ -22,19 +23,27 @@ export function ProductRow({
       onPress={onPress}
       style={({ pressed }) => (pressed ? { opacity: 0.85 } : undefined)}
     >
-      <Card className="gap-3">
+      <Card
+        className={cn(
+          "gap-3",
+          isLowStock && "border-danger-border bg-danger-soft",
+        )}
+      >
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
             <AppText variant="body" className="font-semibold">
               {product.name}
             </AppText>
-            <AppText variant="caption">
+            <AppText
+              variant="caption"
+              className={isLowStock ? "text-danger" : undefined}
+            >
               {formatQuantity(product.stock)} {product.unit} · mínimo{" "}
               {formatQuantity(product.minStock)}
             </AppText>
           </View>
           {isLowStock ? (
-            <Badge tone="warning" label="Stock bajo" />
+            <Badge tone="danger" label="Stock bajo" />
           ) : (
             <Badge tone="neutral" label={product.unit} />
           )}

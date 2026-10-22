@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   View,
 } from "react-native";
@@ -18,6 +19,7 @@ import {
 import {
   buildPurchasePreview,
   type PurchaseInput,
+  type SalePriceStrategy,
 } from "@/database/repositories/purchases.repository";
 import type { Product } from "@/database/types";
 import {
@@ -29,6 +31,7 @@ import {
   parseQuantityInput,
   roundQuantity,
 } from "@/database/utils/quantity";
+import { usePalette } from "@/theme/colors";
 import { sanitizeDecimalInput, sanitizeMoneyInput } from "@/utils/input";
 
 interface PurchaseFormProps {
@@ -42,6 +45,7 @@ interface FormErrors {
   product?: string;
   quantity?: string;
   total?: string;
+  price?: string;
 }
 
 function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
@@ -50,6 +54,103 @@ function SummaryRow({ label, children }: { label: string; children: ReactNode })
       <AppText variant="muted">{label}</AppText>
       {children}
     </View>
+  );
+}
+
+function defaultSalePriceStrategy(product: Product | null): SalePriceStrategy {
+  if (product && product.marginPercent > 0) return "margin";
+  if (product && product.salePrice != null) return "keep";
+  return "margin";
+}
+
+function PriceOption({
+  title,
+  description,
+  price,
+  margin,
+  selected,
+  disabled = false,
+  warning,
+  onPress,
+}: {
+  title: string;
+  description: string;
+  price: number | null;
+  margin: number | null;
+  selected: boolean;
+  disabled?: boolean;
+  warning?: string | null;
+  onPress: () => void;
+}) {
+  const palette = usePalette();
+  const marginTone =
+    margin == null
+      ? palette.contentMuted
+      : margin < 0 || margin >= 30
+        ? palette.danger
+        : palette.success;
+
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        gap: 8,
+        padding: 12,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: selected ? palette.accent : palette.border,
+        backgroundColor: selected ? palette.accentSoft : palette.surface,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1">
+          <AppText className="font-semibold">{title}</AppText>
+          <AppText variant="caption">{description}</AppText>
+        </View>
+        <View
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 9,
+            borderWidth: 1.5,
+            borderColor: selected ? palette.accent : palette.border,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {selected ? (
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: palette.accent,
+              }}
+            />
+          ) : null}
+        </View>
+      </View>
+
+      <View className="flex-row items-end justify-between gap-3">
+        <MoneyText value={price} className="font-semibold" />
+        <View className="items-end gap-0.5">
+          <AppText variant="caption">Nuevo margen</AppText>
+          <AppText className="font-semibold" style={{ color: marginTone }}>
+            {formatPercent(margin)}
+          </AppText>
+        </View>
+      </View>
+
+      {warning ? (
+        <AppText variant="caption" className="text-danger">
+          {warning}
+        </AppText>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -65,6 +166,9 @@ export function PurchaseForm({
   );
   const [quantityInput, setQuantityInput] = useState("");
   const [totalInput, setTotalInput] = useState("");
+  const [salePriceStrategy, setSalePriceStrategy] = useState<SalePriceStrategy>(
+    defaultSalePriceStrategy(initialProduct ?? null),
+  );
   const [pickerVisible, setPickerVisible] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
 
@@ -78,11 +182,20 @@ export function PurchaseForm({
     selectedProduct && quantity > 0
       ? roundQuantity(selectedProduct.stock + quantity)
       : null;
+  const hasPriceOptions =
+    preview != null &&
+    (preview.marginSalePrice != null || preview.previousSalePrice != null);
 
   function handleSelect(product: Product) {
     setSelectedProduct(product);
-    setErrors((current) => ({ ...current, product: undefined }));
+    setSalePriceStrategy(defaultSalePriceStrategy(product));
+    setErrors((current) => ({ ...current, product: undefined, price: undefined }));
     setPickerVisible(false);
+  }
+
+  function handlePriceStrategy(strategy: SalePriceStrategy) {
+    setSalePriceStrategy(strategy);
+    setErrors((current) => ({ ...current, price: undefined }));
   }
 
   function validate(): boolean {
@@ -97,6 +210,12 @@ export function PurchaseForm({
     if (total <= 0) {
       next.total = "Ingresa el total pagado.";
     }
+    if (preview && salePriceStrategy === "keep" && !preview.canKeepPrice) {
+      next.price =
+        preview.previousSalePrice == null
+          ? "Este producto no tiene un precio de salida para mantener."
+          : "Mantener el precio actual supera el margen máximo del 30%. Recalcula el precio.";
+    }
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -109,6 +228,7 @@ export function PurchaseForm({
       productId: selectedProduct.id,
       quantity,
       total,
+      salePriceStrategy,
     });
   }
 
@@ -226,36 +346,66 @@ export function PurchaseForm({
               </AppText>
             </SummaryRow>
 
-            {preview.newSalePrice != null ? (
-              <>
-                <SummaryRow label="Precio de salida">
-                  <View className="flex-row items-center gap-2">
-                    {preview.previousSalePrice != null ? (
-                      <MoneyText
-                        value={preview.previousSalePrice}
-                        className="text-content-muted"
-                        style={{ textDecorationLine: "line-through" }}
-                      />
-                    ) : null}
-                    <MoneyText
-                      value={preview.newSalePrice}
-                      className="font-semibold text-accent"
-                    />
-                  </View>
-                </SummaryRow>
-                <SummaryRow label="Margen efectivo">
-                  <AppText variant="body" className="font-semibold text-success">
-                    {formatPercent(preview.effectiveMargin)}
-                  </AppText>
-                </SummaryRow>
-              </>
+            <View className="h-px bg-border" />
+
+            <View className="gap-1">
+              <AppText variant="title">Precio de salida</AppText>
+              <AppText variant="muted">
+                Elige qué hacer con el precio de venta al actualizar el costo.
+              </AppText>
+            </View>
+
+            {hasPriceOptions ? (
+              <View className="gap-2">
+                <PriceOption
+                  title="Recalcular según margen"
+                  description={
+                    preview.marginSalePrice != null
+                      ? `Mantiene el margen definido de ${formatPercent(preview.marginPercent)}.`
+                      : "El producto no tiene un margen mayor a cero."
+                  }
+                  price={preview.marginSalePrice}
+                  margin={preview.marginEffectiveMargin}
+                  selected={salePriceStrategy === "margin"}
+                  disabled={preview.marginSalePrice == null}
+                  onPress={() => handlePriceStrategy("margin")}
+                />
+
+                <PriceOption
+                  title="Mantener precio actual"
+                  description={
+                    preview.previousSalePrice != null
+                      ? "Conserva el precio de salida existente."
+                      : "El producto no tiene un precio de salida actual."
+                  }
+                  price={preview.previousSalePrice}
+                  margin={preview.keptEffectiveMargin}
+                  selected={salePriceStrategy === "keep"}
+                  disabled={!preview.canKeepPrice}
+                  warning={
+                    preview.keptEffectiveMargin != null &&
+                    preview.keptEffectiveMargin < 0
+                      ? "Venderías por debajo del costo."
+                      : preview.keptEffectiveMargin != null &&
+                          preview.keptEffectiveMargin >= 30
+                        ? "Supera el margen máximo del 30%."
+                        : null
+                  }
+                  onPress={() => handlePriceStrategy("keep")}
+                />
+              </View>
             ) : (
               <AppText variant="muted">
-                Este producto no tiene ganancia configurada. El precio de salida
-                no se actualizará. Puedes configurarlo desde la edición del
-                producto.
+                Este producto no tiene margen ni precio de salida configurado. La
+                compra solo actualizará el costo y el stock.
               </AppText>
             )}
+
+            {errors.price ? (
+              <AppText variant="caption" className="text-danger">
+                {errors.price}
+              </AppText>
+            ) : null}
           </Card>
         ) : null}
       </ScrollView>
@@ -284,8 +434,8 @@ export function PurchaseForm({
       <ProductPicker
         visible={pickerVisible}
         selectedId={selectedProduct?.id}
-        onClose={() => setPickerVisible(false)}
         onSelect={handleSelect}
+        onClose={() => setPickerVisible(false)}
       />
     </KeyboardAvoidingView>
   );
