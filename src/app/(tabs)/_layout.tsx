@@ -1,139 +1,145 @@
-import { Colors } from "@/constants/theme";
+import { AppText } from "@/components/ui";
+import { usePalette } from "@/theme/colors";
+import { cn } from "@/utils/cn";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { StyleSheet, useColorScheme, useWindowDimensions, View } from "react-native";
+import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import type { ComponentProps } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type ColorValue,
+} from "react-native";
 
-export default function TabsLayout() {
-    const scheme = useColorScheme();
-    const theme = Colors[scheme === "dark" ? "dark" : "light"];
-    const { height } = useWindowDimensions();
-    const isCompactHeight = height < 780;
+type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
-    return (
-        <Tabs
-            screenOptions={{
-                headerShown: false,
-                animation: "shift",
-                lazy: true,
-                freezeOnBlur: true,
-                sceneStyle: {
-                    backgroundColor: theme.background,
-                },
-                tabBarActiveTintColor: theme.text,
-                tabBarInactiveTintColor: theme.textMuted,
-                tabBarLabelStyle: {
-                    fontSize: 10,
-                    fontWeight: "700",
-                    letterSpacing: 0.6,
-                    textTransform: "uppercase",
-                    marginTop: 4,
-                    lineHeight: 12,
-                },
-                tabBarStyle: {
-                    position: "absolute",
-                    left: isCompactHeight ? 14 : 16,
-                    right: isCompactHeight ? 14 : 16,
-                    bottom: isCompactHeight ? 10 : 16,
-                    height: isCompactHeight ? 74 : 80,
-                    borderRadius: 30,
-                    borderTopWidth: 0,
-                    backgroundColor: theme.surface,
-                    borderColor: theme.border,
-                    borderWidth: 1,
-                    shadowColor: theme.shadow,
-                    shadowOffset: { width: 0, height: 10 },
-                    shadowOpacity: scheme === "dark" ? 0.3 : 0.1,
-                    shadowRadius: 22,
-                    elevation: 16,
-                    paddingTop: 8,
-                    paddingBottom: isCompactHeight ? 6 : 8,
-                    paddingHorizontal: 6,
-                },
-                tabBarItemStyle: {
-                    paddingTop: 6,
-                    paddingBottom: 6,
-                    paddingHorizontal: 4,
-                },
-                tabBarLabelPosition: "below-icon",
-                tabBarShowLabel: true,
-            }}>
-            <Tabs.Screen
-                name="index"
-                options={{
-                    title: "Inicio",
-                    tabBarIcon: ({ focused, color, size }) => (
-                        <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
-                            <MaterialCommunityIcons
-                                name="view-dashboard-outline"
-                                size={(size ?? 22) - 1}
-                                color={focused ? "#FFFFFF" : color}
-                            />
-                        </View>
-                    ),
-                }}
-            />
-            <Tabs.Screen
+function tabIcon(name: IconName) {
+  return function TabBarIcon({ color, size }: { color: ColorValue; size: number }) {
+    return <MaterialCommunityIcons name={name} size={size} color={color} />;
+  };
+}
 
-                name="inventory"
-                options={{
-                    title: "Inventario",
-                    tabBarIcon: ({ focused, color, size }) => (
-                        <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
-                            <MaterialCommunityIcons
-                                name="warehouse"
-                                size={(size ?? 22) - 1}
-                                color={focused ? "#FFFFFF" : color}
+function AppTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+  const palette = usePalette();
 
-                            />
-                        </View>
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="movements"
-                options={{
-                    title: "Movimientos",
-                    tabBarIcon: ({ focused, color, size }) => (
-                        <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
-                            <MaterialCommunityIcons
-                                name="swap-horizontal"
-                                size={(size ?? 22) - 1}
-                                color={focused ? "#FFFFFF" : color}
-                            />
-                        </View>
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="statistics"
-                options={{
-                    title: "Estadisticas",
-                    tabBarIcon: ({ focused, color, size }) => (
-                        <View style={[styles.iconBubble, focused && styles.iconBubbleFocused]}>
-                            <MaterialCommunityIcons
-                                name="chart-box-outline"
-                                size={(size ?? 22) - 1}
-                                color={focused ? "#FFFFFF" : color}
-                            />
-                        </View>
-                    ),
-                }}
-            />
-        </Tabs>
-    );
+  return (
+    <View
+      style={[
+        styles.bar,
+        {
+          backgroundColor: palette.surface,
+          borderTopColor: palette.border,
+          paddingBottom: insets.bottom,
+        },
+      ]}
+    >
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const focused = state.index === index;
+        const label = options.title ?? route.name;
+        const color = focused ? palette.accent : palette.contentMuted;
+
+        function handlePress() {
+          const event = navigation.emit({
+            type: "tabPress",
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!focused && !event.defaultPrevented) {
+            navigation.navigate(route.name, route.params);
+          }
+        }
+
+        function handleLongPress() {
+          navigation.emit({ type: "tabLongPress", target: route.key });
+        }
+
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: focused }}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            onPress={handlePress}
+            onLongPress={handleLongPress}
+            style={styles.item}
+          >
+            <View
+              className={cn(
+                "items-center justify-center gap-0.5 rounded-full py-1.5",
+                focused ? "bg-accent-soft" : "bg-transparent",
+              )}
+              style={styles.pill}
+            >
+              {options.tabBarIcon?.({ focused, color, size: 22 })}
+              <AppText
+                variant="caption"
+                className={cn(
+                  "text-[10px] font-semibold",
+                  focused ? "text-accent" : "text-content-muted",
+                )}
+                numberOfLines={1}
+              >
+                {label}
+              </AppText>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    iconBubble: {
-        width: 36,
-        height: 36,
-        borderRadius: 999,
-        alignItems: "center",
-        justifyContent: "center",
-        marginBottom: 2,
-        backgroundColor: "rgba(100, 116, 139, 0.12)",
-    },
-    iconBubbleFocused: {
-        backgroundColor: "#0A5FD8",
-    },
+  bar: {
+    flexDirection: "row",
+    paddingHorizontal: 8,
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  item: {
+    flex: 1,
+    marginHorizontal: 3,
+    marginBottom: 4,
+  },
+  pill: {
+    borderRadius: 16,
+    borderCurve: "continuous",
+  },
 });
+
+export default function TabsLayout() {
+  const palette = usePalette();
+
+  return (
+    <Tabs
+      tabBar={(props) => <AppTabBar {...props} />}
+      screenOptions={{
+        headerStyle: { backgroundColor: palette.background },
+        headerTintColor: palette.content,
+        headerTitleStyle: { fontWeight: "700" },
+        headerShadowVisible: false,
+        sceneStyle: { backgroundColor: palette.background },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{ title: "Inicio", tabBarIcon: tabIcon("view-dashboard-outline") }}
+      />
+      <Tabs.Screen
+        name="inventory"
+        options={{ title: "Inventario", tabBarIcon: tabIcon("package-variant-closed") }}
+      />
+      <Tabs.Screen
+        name="movements"
+        options={{ title: "Movimientos", tabBarIcon: tabIcon("swap-horizontal") }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{ title: "Historial", tabBarIcon: tabIcon("history") }}
+      />
+    </Tabs>
+  );
+}

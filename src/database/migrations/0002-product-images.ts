@@ -1,5 +1,0 @@
-export const PRODUCT_IMAGES_MIGRATION_VERSION = 2;
-
-export const PRODUCT_IMAGES_SCHEMA_SQL = `
-ALTER TABLE products ADD COLUMN image_path TEXT;
-`;

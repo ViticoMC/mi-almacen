@@ -1,6 +1,5 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: "class",
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   presets: [require("nativewind/preset")],
   theme: {
@@ -16,9 +15,9 @@ module.exports = {
         "accent-soft": "var(--accent-soft)",
         border: "var(--border)",
         shadow: "var(--shadow)",
-        success: "#16A34A",
-        warning: "#F59E0B",
-        danger: "#DC2626",
+        success: "#4e7a5a",
+        warning: "#a9762e",
+        danger: "#b2543b",
       },
       fontSize: {
         body: ["16px", { lineHeight: "24px", fontWeight: "500" }],

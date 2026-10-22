@@ -1,16 +1,35 @@
 import { SQLiteProvider } from "expo-sqlite";
-import type { ReactNode } from "react";
-import { migrateDatabase } from "./migrations";
-import { DATABASE_NAME } from "./schema";
+import { Suspense, type PropsWithChildren } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
+import { usePalette } from "@/theme/colors";
+import { DataProvider } from "./data-context";
+import { DATABASE_NAME, migrateDatabase } from "./migrations";
 
-type DatabaseProviderProps = {
-    children: ReactNode;
-};
+function DatabaseFallback() {
+  const palette = usePalette();
 
-export function DatabaseProvider({ children }: DatabaseProviderProps) {
-    return (
-        <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase}>
-            {children}
-        </SQLiteProvider>
-    );
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        backgroundColor: palette.background,
+      }}
+    >
+      <ActivityIndicator color={palette.accent} />
+      <Text style={{ color: palette.contentMuted }}>Preparando el almacén…</Text>
+    </View>
+  );
+}
+
+export function DatabaseProvider({ children }: PropsWithChildren) {
+  return (
+    <Suspense fallback={<DatabaseFallback />}>
+      <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase} useSuspense>
+        <DataProvider>{children}</DataProvider>
+      </SQLiteProvider>
+    </Suspense>
+  );
 }
