@@ -1,6 +1,9 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type {
   Adjustment,
+  CountAdjustmentLine,
+  CountListItem,
+  CountSaleLine,
   HistoryEntry,
   HistoryType,
   Purchase,
@@ -35,22 +38,32 @@ export interface AdjustmentHistoryDetail extends Adjustment {
   productUnit: string;
 }
 
+export interface CountHistoryDetail extends CountListItem {
+  kind: "count";
+  productName: string;
+  productUnit: string | null;
+  sales: CountSaleLine[];
+  adjustments: CountAdjustmentLine[];
+}
+
 export type HistoryDetail =
   | PurchaseHistoryDetail
   | SaleHistoryDetail
-  | AdjustmentHistoryDetail;
+  | AdjustmentHistoryDetail
+  | CountHistoryDetail;
 
 interface HistoryRow {
   type: HistoryType;
   id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   quantity: number;
   total: number | null;
   unit_price: number | null;
   reason: string | null;
   created_at: number;
-  product_unit: string;
+  product_unit: string | null;
+  item_count: number | null;
 }
 
 interface PurchaseDetailRow {
@@ -94,6 +107,78 @@ interface AdjustmentDetailRow {
   product_unit: string;
 }
 
+interface CountRow {
+  id: string;
+  total_sale: number;
+  units_sold: number;
+  units_added: number;
+  sale_lines: number;
+  adjustment_lines: number;
+  created_at: number;
+}
+
+interface CountSaleLineRow {
+  id: string;
+  product_id: string;
+  quantity: number;
+  unit_price: number;
+  cost_price: number | null;
+  margin_percent: number | null;
+  total: number;
+  stock_before: number | null;
+  stock_after: number | null;
+  product_name: string;
+  product_unit: string;
+  created_at: number;
+}
+
+interface CountAdjustmentLineRow {
+  id: string;
+  product_id: string;
+  quantity_delta: number;
+  stock_before: number;
+  stock_after: number;
+  unit_cost: number | null;
+  reason: string | null;
+  created_at: number;
+  product_name: string;
+  product_unit: string;
+}
+
+function mapCountSaleLine(row: CountSaleLineRow): CountSaleLine {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    quantity: row.quantity,
+    unitPrice: row.unit_price,
+    costPrice: row.cost_price,
+    marginPercent: row.margin_percent,
+    total: row.total,
+    stockBefore: row.stock_before,
+    stockAfter: row.stock_after,
+    productName: row.product_name,
+    productUnit: row.product_unit,
+    createdAt: row.created_at,
+  };
+}
+
+function mapCountAdjustmentLine(
+  row: CountAdjustmentLineRow,
+): CountAdjustmentLine {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    quantityDelta: row.quantity_delta,
+    stockBefore: row.stock_before,
+    stockAfter: row.stock_after,
+    unitCost: row.unit_cost,
+    reason: row.reason,
+    createdAt: row.created_at,
+    productName: row.product_name,
+    productUnit: row.product_unit,
+  };
+}
+
 function mapHistory(row: HistoryRow): HistoryListItem {
   return {
     type: row.type,
@@ -104,13 +189,19 @@ function mapHistory(row: HistoryRow): HistoryListItem {
     total: row.total,
     unitPrice: row.unit_price,
     reason: row.reason,
+    itemCount: row.item_count ?? null,
     createdAt: row.created_at,
-    productUnit: row.product_unit,
+    productUnit: row.product_unit ?? "",
   };
 }
 
 export function isHistoryType(value: string | undefined): value is HistoryType {
-  return value === "purchase" || value === "sale" || value === "adjustment";
+  return (
+    value === "purchase" ||
+    value === "sale" ||
+    value === "adjustment" ||
+    value === "count"
+  );
 }
 
 export async function listHistory(
@@ -125,8 +216,15 @@ export async function listHistory(
     params.push(filters.type);
   }
   if (filters.productId) {
-    clauses.push("h.product_id = ?");
-    params.push(filters.productId);
+    clauses.push(`(
+      h.product_id = ? OR (
+        h.type = 'count' AND (
+          EXISTS (SELECT 1 FROM sales s WHERE s.count_id = h.id AND s.product_id = ?) OR
+          EXISTS (SELECT 1 FROM adjustments a WHERE a.count_id = h.id AND a.product_id = ?)
+        )
+      )
+    )`);
+    params.push(filters.productId, filters.productId, filters.productId);
   }
   if (filters.since != null) {
     clauses.push("h.created_at >= ?");
@@ -137,7 +235,7 @@ export async function listHistory(
   const rows = await db.getAllAsync<HistoryRow>(
     `SELECT h.*, pr.unit AS product_unit
      FROM history h
-     JOIN products pr ON pr.id = h.product_id
+     LEFT JOIN products pr ON pr.id = h.product_id
      ${where}
      ORDER BY h.created_at DESC
      LIMIT 200`,
@@ -152,6 +250,71 @@ export async function getHistoryDetail(
   type: HistoryType,
   id: string,
 ): Promise<HistoryDetail | null> {
+  if (type === "count") {
+    const countRow = await db.getFirstAsync<CountRow>(
+      `SELECT * FROM counts WHERE id = ?`,
+      id,
+    );
+
+    if (!countRow) return null;
+
+    const sales = await db.getAllAsync<CountSaleLineRow>(
+      `SELECT
+         s.id,
+         s.product_id,
+         s.quantity,
+         s.unit_price,
+         s.cost_price,
+         s.margin_percent,
+         s.total,
+         s.stock_before,
+         s.stock_after,
+         pr.name AS product_name,
+         pr.unit AS product_unit,
+         s.created_at
+       FROM sales s
+       JOIN products pr ON pr.id = s.product_id
+       WHERE s.count_id = ?
+       ORDER BY s.created_at ASC`,
+      [id],
+    );
+
+    const adjustments = await db.getAllAsync<CountAdjustmentLineRow>(
+      `SELECT
+         a.id,
+         a.product_id,
+         a.quantity_delta,
+         a.stock_before,
+         a.stock_after,
+         a.unit_cost,
+         a.reason,
+         a.created_at,
+         pr.name AS product_name,
+         pr.unit AS product_unit
+       FROM adjustments a
+       JOIN products pr ON pr.id = a.product_id
+       WHERE a.count_id = ?
+       ORDER BY a.created_at ASC`,
+      [id],
+    );
+
+    return {
+      kind: "count",
+      id: countRow.id,
+      totalSale: countRow.total_sale,
+      unitsSold: countRow.units_sold,
+      unitsAdded: countRow.units_added,
+      saleLines: countRow.sale_lines,
+      adjustmentLines: countRow.adjustment_lines,
+      createdAt: countRow.created_at,
+      itemCount: countRow.sale_lines + countRow.adjustment_lines,
+      productName: "Conteo semanal",
+      productUnit: null,
+      sales: sales.map(mapCountSaleLine),
+      adjustments: adjustments.map(mapCountAdjustmentLine),
+    };
+  }
+
   if (type === "purchase") {
     const row = await db.getFirstAsync<PurchaseDetailRow>(
       `SELECT pu.*, pr.name AS product_name, pr.unit AS product_unit

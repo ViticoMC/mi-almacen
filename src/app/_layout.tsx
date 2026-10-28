@@ -1,9 +1,9 @@
+import { DatabaseProvider } from "@/database";
+import { usePalette } from "@/theme/colors";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { DatabaseProvider } from "@/database";
-import { usePalette } from "@/theme/colors";
 import "../global.css";
 
 export default function RootLayout() {
@@ -54,12 +54,16 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
-              name="sale/new"
+              name="count/new"
               options={{
                 headerShown: true,
                 presentation: "modal",
-                title: "Registrar venta",
+                title: "Conteo semanal",
               }}
+            />
+            <Stack.Screen
+              name="count/[id]"
+              options={{ headerShown: true, title: "Detalle del conteo" }}
             />
             <Stack.Screen
               name="adjustment/new"

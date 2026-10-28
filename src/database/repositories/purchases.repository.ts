@@ -12,13 +12,14 @@ import {
   type ProductRow,
 } from "./products.repository";
 
-export type SalePriceStrategy = "margin" | "keep";
+export type SalePriceStrategy = "margin" | "keep" | "custom";
 
 export interface PurchaseInput {
   productId: string;
   quantity: number;
   total: number;
   salePriceStrategy: SalePriceStrategy;
+  customSalePrice?: number;
 }
 
 export interface PurchasePreview {
@@ -33,6 +34,8 @@ export interface PurchasePreview {
   marginSalePrice: number | null;
   marginEffectiveMargin: number | null;
   keptEffectiveMargin: number | null;
+  customSalePrice: number | null;
+  customEffectiveMargin: number | null;
   canKeepPrice: boolean;
 }
 
@@ -77,6 +80,7 @@ export function buildPurchasePreview(
   product: Product,
   quantity: number,
   total: number,
+  customSalePrice?: number,
 ): PurchasePreview {
   const safeQuantity = roundQuantity(quantity);
   const safeTotal = roundMoney(total);
@@ -89,6 +93,14 @@ export function buildPurchasePreview(
   const keptEffectiveMargin =
     unitCost > 0 && product.salePrice != null && product.salePrice >= 0
       ? effectiveMargin(unitCost, product.salePrice)
+      : null;
+  const safeCustomSalePrice =
+    customSalePrice != null && customSalePrice > 0
+      ? roundMoney(customSalePrice)
+      : null;
+  const customEffectiveMargin =
+    safeCustomSalePrice != null && unitCost > 0
+      ? effectiveMargin(unitCost, safeCustomSalePrice)
       : null;
 
   return {
@@ -106,6 +118,8 @@ export function buildPurchasePreview(
         ? effectiveMargin(unitCost, marginSalePrice)
         : null,
     keptEffectiveMargin,
+    customSalePrice: safeCustomSalePrice,
+    customEffectiveMargin,
     canKeepPrice:
       keptEffectiveMargin != null && keptEffectiveMargin < 30,
   };
@@ -164,6 +178,8 @@ export async function registerPurchase(
     }
 
     let newSalePrice: number | null;
+    let newMarginPercent = product.marginPercent;
+
     if (input.salePriceStrategy === "keep") {
       if (product.salePrice == null) {
         throw new Error("El producto no tiene un precio de salida para mantener.");
@@ -174,6 +190,20 @@ export async function registerPurchase(
         );
       }
       newSalePrice = product.salePrice;
+    } else if (input.salePriceStrategy === "custom") {
+      const customSalePrice = roundMoney(input.customSalePrice ?? 0);
+      if (customSalePrice <= 0) {
+        throw new Error("Ingresa un precio de venta mayor a cero.");
+      }
+
+      const customMargin = effectiveMargin(unitCost, customSalePrice);
+      if (customMargin >= 30) {
+        throw new Error("El margen debe ser menor al 30%.");
+      }
+
+      newSalePrice = customSalePrice;
+      newMarginPercent =
+        customMargin > 0 ? Math.floor(customMargin * 100) / 100 : 0;
     } else {
       newSalePrice =
         product.marginPercent > 0
@@ -208,10 +238,11 @@ export async function registerPurchase(
        SET last_price = current_price,
            current_price = ?,
            sale_price = ?,
+           margin_percent = ?,
            stock = ?,
            updated_at = ?
        WHERE id = ?`,
-      [unitCost, newSalePrice, newStock, now, product.id],
+      [unitCost, newSalePrice, newMarginPercent, newStock, now, product.id],
     );
 
     created = {

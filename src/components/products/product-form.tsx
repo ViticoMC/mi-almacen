@@ -1,11 +1,3 @@
-import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText, Badge, Button, Card, MoneyText, TextField } from "@/components/ui";
 import type { UpdateProductInput } from "@/database/repositories/products.repository";
 import type { Product } from "@/database/types";
@@ -19,6 +11,14 @@ import {
 } from "@/database/utils/money";
 import { formatQuantity, parseQuantityInput } from "@/database/utils/quantity";
 import { sanitizeDecimalInput, sanitizeMoneyInput } from "@/utils/input";
+import { useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface ProductFormProps {
   mode: "create" | "edit";
@@ -60,6 +60,7 @@ export function ProductForm({
   const insets = useSafeAreaInsets();
   const cost = product?.currentPrice ?? null;
   const hasCost = cost != null && cost > 0;
+  const showPricing = mode === "edit" && hasCost;
 
   const [name, setName] = useState(product?.name ?? "");
   const [unit, setUnit] = useState(product?.unit ?? "");
@@ -157,16 +158,18 @@ export function ProductForm({
     if (parseQuantityInput(minStock) < 0) {
       next.minStock = "El stock mínimo no puede ser negativo.";
     }
-    if (rawMargin < 0 || rawMargin >= 30) {
-      next.margin = "El margen debe estar entre 0% y 29,9%.";
-    }
-    if (cost != null && cost > 0) {
-      if (!salePrice || salePriceValue <= 0) {
-        next.salePrice = "Define el precio de salida.";
-      } else if (salePriceValue < cost) {
-        next.salePrice = "El precio no puede ser menor al costo.";
-      } else if (effectiveMargin(cost, salePriceValue) >= 30) {
-        next.salePrice = "El margen debe ser menor a 30%.";
+    if (showPricing) {
+      if (rawMargin < 0 || rawMargin >= 30) {
+        next.margin = "El margen debe estar entre 0% y 29,9%.";
+      }
+      if (cost != null && cost > 0) {
+        if (!salePrice || salePriceValue <= 0) {
+          next.salePrice = "Define el precio de salida.";
+        } else if (salePriceValue < cost) {
+          next.salePrice = "El precio no puede ser menor al costo.";
+        } else if (effectiveMargin(cost, salePriceValue) >= 30) {
+          next.salePrice = "El margen debe ser menor a 30%.";
+        }
       }
     }
 
@@ -181,8 +184,8 @@ export function ProductForm({
       name: name.trim(),
       unit: unit.trim(),
       minStock: Math.max(0, parseQuantityInput(minStock)),
-      marginPercent: marginValue,
-      salePrice: cost != null && cost > 0 ? salePriceValue : undefined,
+      marginPercent: showPricing ? marginValue : (product?.marginPercent ?? 0),
+      salePrice: showPricing ? salePriceValue : undefined,
     });
   }
 
@@ -227,59 +230,59 @@ export function ProductForm({
             value={minStock}
             onChangeText={(text) => setMinStock(sanitizeDecimalInput(text))}
             keyboardType="decimal-pad"
-            hint="Se muestra una alerta cuando el stock llegue a este valor. 0 = sin alerta."
+            hint="Se muestra una alerta cuando el stock llegue a este valor."
             error={errors.minStock}
           />
-        </Card>
 
-        <Card className="gap-4">
-          <View className="flex-row items-center justify-between gap-3">
-            <AppText variant="title">Ganancia</AppText>
-            <Badge tone="accent" label={formatPercent(marginValue)} />
-          </View>
-
-          <TextField
-            label="Ganancia (%)"
-            value={margin}
-            onChangeText={handleMarginChange}
-            keyboardType="decimal-pad"
-            hint={`Máximo ${formatPercent(MAX_MARGIN_PERCENT)} por ley.`}
-            error={errors.margin}
-          />
-
-          {hasCost ? (
-            <>
-              <TextField
-                label="Precio de salida"
-                value={salePrice}
-                onChangeText={handleSalePriceChange}
-                onBlur={handleSalePriceBlur}
-                keyboardType="number-pad"
-                error={errors.salePrice}
-              />
-
-              <View className="gap-2 rounded-xl bg-background p-3">
-                <AppText variant="caption">Vista previa</AppText>
-                <SummaryRow label="Costo actual" value={cost} />
-                <SummaryRow
-                  label="Precio de venta"
-                  value={salePriceValue > 0 ? salePriceValue : computedPrice}
-                />
-                <View className="flex-row items-center justify-between gap-3">
-                  <AppText variant="muted">Margen efectivo</AppText>
-                  <AppText variant="body" className="font-semibold text-success">
-                    {formatPercent(effective ?? 0)}
-                  </AppText>
-                </View>
-              </View>
-            </>
-          ) : (
+          {!showPricing ? (
             <AppText variant="muted">
-              El costo y el precio de salida se definen al registrar la primera
-              compra. Puedes dejar el margen configurado desde ahora.
+              El costo, el margen y el precio de salida se definen al registrar
+              la primera compra.
             </AppText>
-          )}
+          ) : null}
         </Card>
+
+        {showPricing ? (
+          <Card className="gap-4">
+            <View className="flex-row items-center justify-between gap-3">
+              <AppText variant="title">Ganancia</AppText>
+              <Badge tone="accent" label={formatPercent(marginValue)} />
+            </View>
+
+            <TextField
+              label="Ganancia (%)"
+              value={margin}
+              onChangeText={handleMarginChange}
+              keyboardType="decimal-pad"
+              hint={`Máximo ${formatPercent(MAX_MARGIN_PERCENT)} por ley.`}
+              error={errors.margin}
+            />
+
+            <TextField
+              label="Precio de salida"
+              value={salePrice}
+              onChangeText={handleSalePriceChange}
+              onBlur={handleSalePriceBlur}
+              keyboardType="number-pad"
+              error={errors.salePrice}
+            />
+
+            <View className="gap-2 rounded-xl bg-background p-3">
+              <AppText variant="caption">Vista previa</AppText>
+              <SummaryRow label="Costo actual" value={cost} />
+              <SummaryRow
+                label="Precio de venta"
+                value={salePriceValue > 0 ? salePriceValue : computedPrice}
+              />
+              <View className="flex-row items-center justify-between gap-3">
+                <AppText variant="muted">Margen efectivo</AppText>
+                <AppText variant="body" className="font-semibold text-success">
+                  {formatPercent(effective ?? 0)}
+                </AppText>
+              </View>
+            </View>
+          </Card>
+        ) : null}
       </ScrollView>
 
       <View

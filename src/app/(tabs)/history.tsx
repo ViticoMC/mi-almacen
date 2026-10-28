@@ -1,13 +1,3 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  ScrollView,
-  View,
-} from "react-native";
 import { ProductPicker } from "@/components/products/product-picker";
 import {
   AppText,
@@ -26,6 +16,16 @@ import { formatQuantity } from "@/database/utils/quantity";
 import { useHistory } from "@/hooks/use-history";
 import { usePalette } from "@/theme/colors";
 import { cn } from "@/utils/cn";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 
 type TypeFilter = "all" | HistoryType;
 type DateFilter = "all" | "today" | "week" | "month";
@@ -34,6 +34,7 @@ const typeOptions: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Todo" },
   { value: "purchase", label: "Compras" },
   { value: "sale", label: "Ventas" },
+  { value: "count", label: "Conteos" },
   { value: "adjustment", label: "Ajustes" },
 ];
 
@@ -104,32 +105,41 @@ function HistoryCard({
   const palette = usePalette();
   const isAdjustment = entry.type === "adjustment";
   const isRemoval = isAdjustment && entry.quantity < 0;
+  const isCount = entry.type === "count";
   const color = isAdjustment
     ? isRemoval
       ? palette.danger
       : palette.success
-    : entry.type === "purchase"
-      ? palette.warning
-      : palette.success;
+    : isCount
+      ? palette.accent
+      : entry.type === "purchase"
+        ? palette.warning
+        : palette.success;
   const cardTone = isAdjustment
     ? isRemoval
       ? "border-danger-border bg-danger-soft"
       : "border-success/25 bg-success/10"
-    : entry.type === "purchase"
-      ? "border-warning/25 bg-warning/10"
-      : "border-success/25 bg-success/10";
+    : isCount
+      ? "border-accent/25 bg-accent-soft"
+      : entry.type === "purchase"
+        ? "border-warning/25 bg-warning/10"
+        : "border-success/25 bg-success/10";
   const badgeTone = isAdjustment
     ? isRemoval
       ? "danger"
       : "success"
-    : entry.type === "purchase"
-      ? "warning"
-      : "success";
+    : isCount
+      ? "success"
+      : entry.type === "purchase"
+        ? "warning"
+        : "success";
   const label = isAdjustment
     ? "Ajuste"
-    : entry.type === "purchase"
-      ? "Compra"
-      : "Venta";
+    : isCount
+      ? "Conteo"
+      : entry.type === "purchase"
+        ? "Compra"
+        : "Venta";
 
   return (
     <Pressable

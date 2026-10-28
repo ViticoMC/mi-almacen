@@ -27,14 +27,15 @@ interface StatsRow {
 interface ActivityRow {
   type: HistoryType;
   id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   quantity: number;
   total: number | null;
   unit_price: number | null;
   reason: string | null;
   created_at: number;
-  product_unit: string;
+  product_unit: string | null;
+  item_count: number | null;
 }
 
 function mapActivity(row: ActivityRow): DashboardActivity {
@@ -47,8 +48,9 @@ function mapActivity(row: ActivityRow): DashboardActivity {
     total: row.total,
     unitPrice: row.unit_price,
     reason: row.reason,
+    itemCount: row.item_count ?? null,
     createdAt: row.created_at,
-    productUnit: row.product_unit,
+    productUnit: row.product_unit ?? "",
   };
 }
 
@@ -88,7 +90,7 @@ export async function listRecentActivity(
   const rows = await db.getAllAsync<ActivityRow>(
     `SELECT h.*, pr.unit AS product_unit
      FROM history h
-     JOIN products pr ON pr.id = h.product_id
+     LEFT JOIN products pr ON pr.id = h.product_id
      ORDER BY h.created_at DESC
      LIMIT ?`,
     [limit],

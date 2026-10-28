@@ -1,6 +1,3 @@
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import {
   AppText,
   Badge,
@@ -10,22 +7,24 @@ import {
   MoneyText,
 } from "@/components/ui";
 import type { AdjustmentListItem } from "@/database/repositories/adjustments.repository";
+import type { CountListItem } from "@/database/repositories/counts.repository";
 import type { PurchaseListItem } from "@/database/repositories/purchases.repository";
-import type { SaleListItem } from "@/database/repositories/sales.repository";
 import { formatDateTime } from "@/database/utils/dates";
-import { roundMoney } from "@/database/utils/money";
 import { formatQuantity } from "@/database/utils/quantity";
 import { useAdjustments } from "@/hooks/use-adjustments";
+import { useCounts } from "@/hooks/use-counts";
 import { usePurchases } from "@/hooks/use-purchases";
-import { useSales } from "@/hooks/use-sales";
 import { usePalette } from "@/theme/colors";
 import { cn } from "@/utils/cn";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 
-type MovementMode = "purchases" | "sales" | "adjustments";
+type MovementMode = "purchases" | "counts" | "adjustments";
 
 type MovementItem =
   | { kind: "purchase"; data: PurchaseListItem }
-  | { kind: "sale"; data: SaleListItem }
+  | { kind: "count"; data: CountListItem }
   | { kind: "adjustment"; data: AdjustmentListItem };
 
 function formatDelta(value: number): string {
@@ -44,7 +43,7 @@ function ModeSwitch({
   const palette = usePalette();
   const options: { value: MovementMode; label: string }[] = [
     { value: "purchases", label: "Compras" },
-    { value: "sales", label: "Ventas" },
+    { value: "counts", label: "Conteos" },
     { value: "adjustments", label: "Ajustes" },
   ];
 
@@ -110,48 +109,34 @@ function PurchaseCard({ item }: { item: PurchaseListItem }) {
   );
 }
 
-function SaleCard({ item }: { item: SaleListItem }) {
-  const palette = usePalette();
-  const profit =
-    item.costPrice != null
-      ? roundMoney(item.quantity * (item.unitPrice - item.costPrice))
-      : null;
-
+function CountCard({ item, onPress }: { item: CountListItem; onPress: () => void }) {
   return (
-    <Card className="gap-3 border-success/25 bg-success/10">
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1 gap-1">
-          <AppText className="font-semibold">{item.productName}</AppText>
-          <AppText variant="caption">
-            {formatQuantity(item.quantity)} {item.productUnit} ·{" "}
-            {formatDateTime(item.createdAt)}
-          </AppText>
+    <Pressable accessibilityRole="button" onPress={onPress}>
+      <Card className="gap-3 border-accent/25 bg-accent-soft">
+        <View className="flex-row items-start justify-between gap-3">
+          <View className="flex-1 gap-1">
+            <AppText className="font-semibold">Conteo semanal</AppText>
+            <AppText variant="caption">
+              {item.itemCount} productos · {formatDateTime(item.createdAt)}
+            </AppText>
+          </View>
+          <Badge tone="success" label="Conteo" />
         </View>
-        <Badge tone="success" label="Venta" />
-      </View>
 
-      <View className="flex-row items-end justify-between gap-3">
-        <View className="gap-0.5">
-          <AppText variant="caption">Precio unidad</AppText>
-          <MoneyText value={item.unitPrice} />
+        <View className="flex-row items-end justify-between gap-3">
+          <View className="gap-0.5">
+            <AppText variant="caption">Venta conjunta</AppText>
+            <MoneyText value={item.totalSale} className="font-semibold" />
+          </View>
+          <View className="items-end gap-0.5">
+            <AppText variant="caption">Unidades faltantes</AppText>
+            <AppText className="font-semibold">
+              {formatQuantity(item.unitsSold)}
+            </AppText>
+          </View>
         </View>
-        <View className="items-end gap-0.5">
-          <AppText variant="caption">Total</AppText>
-          <MoneyText value={item.total} className="font-semibold" />
-        </View>
-      </View>
-
-      {profit != null ? (
-        <View className="flex-row items-center justify-between gap-3 border-t border-border pt-3">
-          <AppText variant="caption">Ganancia</AppText>
-          <MoneyText
-            value={profit}
-            className="font-semibold"
-            style={{ color: profit < 0 ? palette.danger : palette.success }}
-          />
-        </View>
-      ) : null}
-    </Card>
+      </Card>
+    </Pressable>
   );
 }
 
@@ -205,50 +190,50 @@ export default function MovementsScreen() {
   const palette = usePalette();
   const [mode, setMode] = useState<MovementMode>("purchases");
   const purchaseState = usePurchases();
-  const saleState = useSales();
+  const countState = useCounts();
   const adjustmentState = useAdjustments();
 
   const isPurchase = mode === "purchases";
-  const isSale = mode === "sales";
+  const isCount = mode === "counts";
   const items: MovementItem[] = isPurchase
     ? purchaseState.purchases.map((data) => ({ kind: "purchase", data }))
-    : isSale
-      ? saleState.sales.map((data) => ({ kind: "sale", data }))
+    : isCount
+      ? countState.entries.map((data) => ({ kind: "count", data }))
       : adjustmentState.adjustments.map((data) => ({ kind: "adjustment", data }));
   const loading = isPurchase
     ? purchaseState.loading
-    : isSale
-      ? saleState.loading
+    : isCount
+      ? countState.loading
       : adjustmentState.loading;
   const error = isPurchase
     ? purchaseState.error
-    : isSale
-      ? saleState.error
+    : isCount
+      ? countState.error
       : adjustmentState.error;
 
   const countLabel = isPurchase
     ? items.length === 1
       ? "1 compra registrada"
       : `${items.length} compras registradas`
-    : isSale
+    : isCount
       ? items.length === 1
-        ? "1 venta registrada"
-        : `${items.length} ventas registradas`
+        ? "1 conteo registrado"
+        : `${items.length} conteos registrados`
       : items.length === 1
         ? "1 ajuste registrado"
         : `${items.length} ajustes registrados`;
 
   const newLabel = isPurchase
     ? "Nueva compra"
-    : isSale
-      ? "Nueva venta"
+    : isCount
+      ? "Nuevo conteo"
       : "Nuevo ajuste";
 
   function openNew() {
     if (isPurchase) {
       router.push("/purchase/new");
-    } else if (isSale) {
-      router.push("/sale/new");
+    } else if (isCount) {
+      router.push("/count/new");
     } else {
       router.push("/adjustment/new");
     }
@@ -283,7 +268,13 @@ export default function MovementsScreen() {
         }
         renderItem={({ item }) => {
           if (item.kind === "purchase") return <PurchaseCard item={item.data} />;
-          if (item.kind === "sale") return <SaleCard item={item.data} />;
+          if (item.kind === "count")
+            return (
+              <CountCard
+                item={item.data}
+                onPress={() => router.push(`/count/${item.data.id}`)}
+              />
+            );
           return <AdjustmentCard item={item.data} />;
         }}
         ListEmptyComponent={
@@ -296,18 +287,18 @@ export default function MovementsScreen() {
               icon={
                 isPurchase
                   ? "cart-arrow-down"
-                  : isSale
-                    ? "cash-register"
+                  : isCount
+                    ? "clipboard-check-outline"
                     : "swap-vertical"
               }
               title={
-                isPurchase ? "Sin compras" : isSale ? "Sin ventas" : "Sin ajustes"
+                isPurchase ? "Sin compras" : isCount ? "Sin conteos" : "Sin ajustes"
               }
               description={
                 isPurchase
                   ? "Registra tu primera compra para actualizar el stock y los precios."
-                  : isSale
-                    ? "Registra tu primera venta para descontar stock y congelar precios."
+                  : isCount
+                    ? "Haz tu primer conteo semanal para ajustar stock y registrar la venta conjunta."
                     : "Registra un ajuste para corregir el stock sin comprar ni vender."
               }
               action={
@@ -315,8 +306,8 @@ export default function MovementsScreen() {
                   label={
                     isPurchase
                       ? "Registrar compra"
-                      : isSale
-                        ? "Registrar venta"
+                      : isCount
+                        ? "Nuevo conteo"
                         : "Registrar ajuste"
                   }
                   onPress={openNew}

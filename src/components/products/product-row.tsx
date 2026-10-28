@@ -25,31 +25,56 @@ export function ProductRow({
     >
       <Card
         className={cn(
-          "gap-3",
+          "gap-4",
           isLowStock && "border-danger-border bg-danger-soft",
         )}
       >
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="flex-1 gap-1">
-            <AppText variant="body" className="font-semibold">
+        <View className="flex-row items-start justify-between gap-4">
+          <View className="flex-1 gap-2">
+            <AppText
+              variant="body"
+              className="text-[18px] leading-6 font-semibold"
+              numberOfLines={2}
+            >
               {product.name}
             </AppText>
             <AppText
               variant="caption"
               className={isLowStock ? "text-danger" : undefined}
             >
-              {formatQuantity(product.stock)} {product.unit} · mínimo{" "}
-              {formatQuantity(product.minStock)}
+              Mínimo {formatQuantity(product.minStock)} {product.unit}
+            </AppText>
+            {isLowStock ? (
+              <Badge tone="danger" label="Stock bajo" className="self-start" />
+            ) : null}
+          </View>
+
+          <View className="max-w-[45%] items-end">
+            <AppText variant="eyebrow" className="text-content-muted">
+              Stock
+            </AppText>
+            <AppText
+              className="text-[30px] leading-[34px] font-extrabold"
+              style={{
+                color: isLowStock ? palette.danger : palette.content,
+                fontVariant: ["tabular-nums"],
+              }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {formatQuantity(product.stock)}
+            </AppText>
+            <AppText
+              variant="caption"
+              className={isLowStock ? "text-danger" : undefined}
+            >
+              {product.unit}
             </AppText>
           </View>
-          {isLowStock ? (
-            <Badge tone="danger" label="Stock bajo" />
-          ) : (
-            <Badge tone="neutral" label={product.unit} />
-          )}
         </View>
 
-        <View className="flex-row items-end justify-between gap-3">
+        <View className="flex-row items-end justify-between gap-3 border-t border-border pt-3">
           <View className="gap-0.5">
             <AppText variant="caption">Costo</AppText>
             <MoneyText value={product.currentPrice} />

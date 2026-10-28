@@ -1,6 +1,3 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useSQLiteContext } from "expo-sqlite";
-import { ActivityIndicator, Alert, View } from "react-native";
 import {
   AppText,
   Badge,
@@ -16,6 +13,9 @@ import { effectiveMargin, formatPercent } from "@/database/utils/money";
 import { formatQuantity } from "@/database/utils/quantity";
 import { useProduct } from "@/hooks/use-products";
 import { usePalette } from "@/theme/colors";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
+import { ActivityIndicator, Alert, View } from "react-native";
 
 function SummaryRow({ label, value }: { label: string; value: number | null }) {
   return (
@@ -68,8 +68,29 @@ export default function ProductDetailScreen() {
     product.salePrice != null ? product.stock * product.salePrice : null;
 
   const productId = product.id;
+  const stock = product.stock;
+  const unit = product.unit;
 
   function handleArchive() {
+    if (stock > 0) {
+      Alert.alert(
+        "No se puede archivar",
+        `Este producto todavía tiene ${formatQuantity(stock)} ${unit} en stock. Ajusta el stock a cero antes de archivarlo.`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Ajustar stock",
+            onPress: () =>
+              router.push({
+                pathname: "/adjustment/new",
+                params: { productId },
+              }),
+          },
+        ],
+      );
+      return;
+    }
+
     Alert.alert(
       "Archivar producto",
       "Dejará de aparecer en el inventario, pero su historial se conserva.",
@@ -160,15 +181,6 @@ export default function ProductDetailScreen() {
         </Card>
 
         <View className="gap-3">
-          <Button
-            label="Registrar venta"
-            onPress={() =>
-              router.push({
-                pathname: "/sale/new",
-                params: { productId: productId },
-              })
-            }
-          />
           <Button
             label="Registrar compra"
             variant="secondary"

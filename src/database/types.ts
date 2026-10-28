@@ -48,16 +48,59 @@ export interface Adjustment {
   createdAt: number;
 }
 
-export type HistoryType = "purchase" | "sale" | "adjustment";
+export interface Count {
+  id: string;
+  totalSale: number;
+  unitsSold: number;
+  unitsAdded: number;
+  saleLines: number;
+  adjustmentLines: number;
+  createdAt: number;
+}
+
+export interface CountListItem extends Count {
+  itemCount: number;
+}
+
+export interface CountSaleLine {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  costPrice: number | null;
+  marginPercent: number | null;
+  total: number;
+  stockBefore: number | null;
+  stockAfter: number | null;
+  productName: string;
+  productUnit: string;
+  createdAt: number;
+}
+
+export interface CountAdjustmentLine extends Adjustment {
+  productName: string;
+  productUnit: string;
+}
+
+export interface CountDetail extends CountListItem {
+  productName: string;
+  productUnit: string | null;
+  sales: CountSaleLine[];
+  adjustments: CountAdjustmentLine[];
+}
+
+export type HistoryLineType = "purchase" | "sale" | "adjustment";
+export type HistoryType = HistoryLineType | "count";
 
 export interface HistoryEntry {
   type: HistoryType;
   id: string;
-  productId: string;
+  productId: string | null;
   productName: string;
   quantity: number;
   total: number | null;
   unitPrice: number | null;
   reason: string | null;
+  itemCount: number | null;
   createdAt: number;
 }

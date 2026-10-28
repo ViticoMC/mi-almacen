@@ -46,6 +46,7 @@ interface FormErrors {
   quantity?: string;
   total?: string;
   price?: string;
+  customPrice?: string;
 }
 
 function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
@@ -60,7 +61,7 @@ function SummaryRow({ label, children }: { label: string; children: ReactNode })
 function defaultSalePriceStrategy(product: Product | null): SalePriceStrategy {
   if (product && product.marginPercent > 0) return "margin";
   if (product && product.salePrice != null) return "keep";
-  return "margin";
+  return "custom";
 }
 
 function PriceOption({
@@ -161,6 +162,7 @@ export function PurchaseForm({
   onCancel,
 }: PurchaseFormProps) {
   const insets = useSafeAreaInsets();
+  const palette = usePalette();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(
     initialProduct ?? null,
   );
@@ -169,33 +171,62 @@ export function PurchaseForm({
   const [salePriceStrategy, setSalePriceStrategy] = useState<SalePriceStrategy>(
     defaultSalePriceStrategy(initialProduct ?? null),
   );
+  const [customPriceInput, setCustomPriceInput] = useState("");
   const [pickerVisible, setPickerVisible] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
 
   const quantity = parseQuantityInput(quantityInput);
   const total = parseMoneyInput(totalInput);
+  const customSalePrice = parseMoneyInput(customPriceInput);
   const preview =
     selectedProduct && quantity > 0 && total > 0
-      ? buildPurchasePreview(selectedProduct, quantity, total)
+      ? buildPurchasePreview(selectedProduct, quantity, total, customSalePrice)
       : null;
   const newStock =
     selectedProduct && quantity > 0
       ? roundQuantity(selectedProduct.stock + quantity)
       : null;
-  const hasPriceOptions =
-    preview != null &&
-    (preview.marginSalePrice != null || preview.previousSalePrice != null);
+  const customMargin = preview?.customEffectiveMargin ?? null;
+  const customMarginTone =
+    customMargin == null
+      ? palette.contentMuted
+      : customMargin < 0 || customMargin >= 30
+        ? palette.danger
+        : palette.success;
 
   function handleSelect(product: Product) {
     setSelectedProduct(product);
     setSalePriceStrategy(defaultSalePriceStrategy(product));
-    setErrors((current) => ({ ...current, product: undefined, price: undefined }));
+    setCustomPriceInput("");
+    setErrors((current) => ({
+      ...current,
+      product: undefined,
+      price: undefined,
+      customPrice: undefined,
+    }));
     setPickerVisible(false);
   }
 
   function handlePriceStrategy(strategy: SalePriceStrategy) {
     setSalePriceStrategy(strategy);
-    setErrors((current) => ({ ...current, price: undefined }));
+    setErrors((current) => ({
+      ...current,
+      price: undefined,
+      customPrice: undefined,
+    }));
+
+    if (
+      strategy === "custom" &&
+      customPriceInput.length === 0 &&
+      selectedProduct?.salePrice != null
+    ) {
+      setCustomPriceInput(String(selectedProduct.salePrice));
+    }
+  }
+
+  function handleCustomPriceChange(text: string) {
+    setCustomPriceInput(sanitizeMoneyInput(text));
+    setErrors((current) => ({ ...current, customPrice: undefined }));
   }
 
   function validate(): boolean {
@@ -216,6 +247,13 @@ export function PurchaseForm({
           ? "Este producto no tiene un precio de salida para mantener."
           : "Mantener el precio actual supera el margen máximo del 30%. Recalcula el precio.";
     }
+    if (preview && salePriceStrategy === "custom") {
+      if (customSalePrice <= 0) {
+        next.customPrice = "Ingresa un precio de venta mayor a cero.";
+      } else if (customMargin != null && customMargin >= 30) {
+        next.customPrice = "El margen debe ser menor al 30%.";
+      }
+    }
 
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -229,6 +267,8 @@ export function PurchaseForm({
       quantity,
       total,
       salePriceStrategy,
+      customSalePrice:
+        salePriceStrategy === "custom" ? customSalePrice : undefined,
     });
   }
 
@@ -340,7 +380,7 @@ export function PurchaseForm({
 
             <View className="h-px bg-border" />
 
-            <SummaryRow label="Ganancia definida">
+            <SummaryRow label="Margen guardado">
               <AppText variant="body" className="font-semibold text-accent">
                 {formatPercent(preview.marginPercent)}
               </AppText>
@@ -355,51 +395,86 @@ export function PurchaseForm({
               </AppText>
             </View>
 
-            {hasPriceOptions ? (
-              <View className="gap-2">
-                <PriceOption
-                  title="Recalcular según margen"
-                  description={
-                    preview.marginSalePrice != null
-                      ? `Mantiene el margen definido de ${formatPercent(preview.marginPercent)}.`
-                      : "El producto no tiene un margen mayor a cero."
-                  }
-                  price={preview.marginSalePrice}
-                  margin={preview.marginEffectiveMargin}
-                  selected={salePriceStrategy === "margin"}
-                  disabled={preview.marginSalePrice == null}
-                  onPress={() => handlePriceStrategy("margin")}
-                />
+            <View className="gap-2">
+              <PriceOption
+                title="Recalcular según margen"
+                description={
+                  preview.marginSalePrice != null
+                    ? `Mantiene el margen definido de ${formatPercent(preview.marginPercent)}.`
+                    : "El producto no tiene un margen mayor a cero."
+                }
+                price={preview.marginSalePrice}
+                margin={preview.marginEffectiveMargin}
+                selected={salePriceStrategy === "margin"}
+                disabled={preview.marginSalePrice == null}
+                onPress={() => handlePriceStrategy("margin")}
+              />
 
-                <PriceOption
-                  title="Mantener precio actual"
-                  description={
-                    preview.previousSalePrice != null
-                      ? "Conserva el precio de salida existente."
-                      : "El producto no tiene un precio de salida actual."
-                  }
-                  price={preview.previousSalePrice}
-                  margin={preview.keptEffectiveMargin}
-                  selected={salePriceStrategy === "keep"}
-                  disabled={!preview.canKeepPrice}
-                  warning={
-                    preview.keptEffectiveMargin != null &&
-                    preview.keptEffectiveMargin < 0
-                      ? "Venderías por debajo del costo."
-                      : preview.keptEffectiveMargin != null &&
-                          preview.keptEffectiveMargin >= 30
-                        ? "Supera el margen máximo del 30%."
-                        : null
-                  }
-                  onPress={() => handlePriceStrategy("keep")}
+              <PriceOption
+                title="Mantener precio actual"
+                description={
+                  preview.previousSalePrice != null
+                    ? "Conserva el precio de salida existente."
+                    : "El producto no tiene un precio de salida actual."
+                }
+                price={preview.previousSalePrice}
+                margin={preview.keptEffectiveMargin}
+                selected={salePriceStrategy === "keep"}
+                disabled={!preview.canKeepPrice}
+                warning={
+                  preview.keptEffectiveMargin != null &&
+                  preview.keptEffectiveMargin < 0
+                    ? "Venderías por debajo del costo."
+                    : preview.keptEffectiveMargin != null &&
+                        preview.keptEffectiveMargin >= 30
+                      ? "Supera el margen máximo del 30%."
+                      : null
+                }
+                onPress={() => handlePriceStrategy("keep")}
+              />
+
+              <PriceOption
+                title="Definir precio de venta"
+                description="Escribe el precio final; el margen se calcula automáticamente."
+                price={preview.customSalePrice}
+                margin={preview.customEffectiveMargin}
+                selected={salePriceStrategy === "custom"}
+                disabled={preview.newCost <= 0}
+                warning={
+                  preview.customEffectiveMargin != null &&
+                  preview.customEffectiveMargin < 0
+                    ? "Venderías por debajo del costo."
+                    : preview.customEffectiveMargin != null &&
+                        preview.customEffectiveMargin >= 30
+                      ? "Supera el margen máximo del 30%."
+                      : null
+                }
+                onPress={() => handlePriceStrategy("custom")}
+              />
+            </View>
+
+            {salePriceStrategy === "custom" ? (
+              <View className="gap-2 rounded-xl border border-border bg-background p-3">
+                <TextField
+                  label="Precio de venta"
+                  value={customPriceInput}
+                  onChangeText={handleCustomPriceChange}
+                  keyboardType="number-pad"
+                  placeholder="Ej. 15000"
+                  hint="El margen se calcula automáticamente."
+                  error={errors.customPrice}
                 />
+                <View className="flex-row items-center justify-between gap-3">
+                  <AppText variant="muted">Margen resultante</AppText>
+                  <AppText
+                    className="font-semibold"
+                    style={{ color: customMarginTone }}
+                  >
+                    {formatPercent(customMargin)}
+                  </AppText>
+                </View>
               </View>
-            ) : (
-              <AppText variant="muted">
-                Este producto no tiene margen ni precio de salida configurado. La
-                compra solo actualizará el costo y el stock.
-              </AppText>
-            )}
+            ) : null}
 
             {errors.price ? (
               <AppText variant="caption" className="text-danger">

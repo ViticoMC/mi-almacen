@@ -196,6 +196,16 @@ export async function archiveProduct(
   db: SQLiteDatabase,
   id: string,
 ): Promise<void> {
+  const product = await getProduct(db, id);
+  if (!product || product.archivedAt != null) {
+    throw new Error("Producto no encontrado o ya archivado.");
+  }
+  if (product.stock > 0) {
+    throw new Error(
+      "No puedes archivar un producto con stock. Ajusta el stock a cero primero.",
+    );
+  }
+
   const now = Date.now();
   await db.runAsync(
     "UPDATE products SET archived_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",

@@ -86,7 +86,8 @@ const migrations: ((db: SQLiteDatabase) => Promise<void>)[] = [
           p.total AS total,
           p.unit_cost AS unit_price,
           NULL AS reason,
-          p.created_at AS created_at
+          p.created_at AS created_at,
+          NULL AS item_count
         FROM purchases p
         JOIN products pr ON pr.id = p.product_id
         UNION ALL
@@ -99,7 +100,8 @@ const migrations: ((db: SQLiteDatabase) => Promise<void>)[] = [
           s.total,
           s.unit_price,
           NULL,
-          s.created_at
+          s.created_at,
+          NULL
         FROM sales s
         JOIN products pr ON pr.id = s.product_id
         UNION ALL
@@ -112,9 +114,109 @@ const migrations: ((db: SQLiteDatabase) => Promise<void>)[] = [
           NULL,
           a.unit_cost,
           a.reason,
-          a.created_at
+          a.created_at,
+          NULL
         FROM adjustments a
         JOIN products pr ON pr.id = a.product_id;
+    `);
+  },
+  async (db) => {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS counts (
+        id TEXT PRIMARY KEY NOT NULL,
+        total_sale INTEGER NOT NULL DEFAULT 0 CHECK (total_sale >= 0),
+        units_sold REAL NOT NULL DEFAULT 0 CHECK (units_sold >= 0),
+        units_added REAL NOT NULL DEFAULT 0 CHECK (units_added >= 0),
+        sale_lines INTEGER NOT NULL DEFAULT 0 CHECK (sale_lines >= 0),
+        adjustment_lines INTEGER NOT NULL DEFAULT 0 CHECK (adjustment_lines >= 0),
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_counts_created ON counts(created_at DESC);
+    `);
+
+    const salesColumns = await getTableColumns(db, "sales");
+    if (!salesColumns.includes("count_id")) {
+      await db.execAsync(
+        "ALTER TABLE sales ADD COLUMN count_id TEXT REFERENCES counts(id) ON DELETE SET NULL;",
+      );
+    }
+    if (!salesColumns.includes("stock_before")) {
+      await db.execAsync("ALTER TABLE sales ADD COLUMN stock_before REAL;");
+    }
+    if (!salesColumns.includes("stock_after")) {
+      await db.execAsync("ALTER TABLE sales ADD COLUMN stock_after REAL;");
+    }
+
+    const adjustmentColumns = await getTableColumns(db, "adjustments");
+    if (!adjustmentColumns.includes("count_id")) {
+      await db.execAsync(
+        "ALTER TABLE adjustments ADD COLUMN count_id TEXT REFERENCES counts(id) ON DELETE SET NULL;",
+      );
+    }
+
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_sales_count ON sales(count_id);
+      CREATE INDEX IF NOT EXISTS idx_adjustments_count ON adjustments(count_id);
+
+      DROP VIEW IF EXISTS history;
+      CREATE VIEW history AS
+        SELECT
+          'purchase' AS type,
+          p.id AS id,
+          p.product_id AS product_id,
+          pr.name AS product_name,
+          p.quantity AS quantity,
+          p.total AS total,
+          p.unit_cost AS unit_price,
+          NULL AS reason,
+          p.created_at AS created_at,
+          NULL AS item_count
+        FROM purchases p
+        JOIN products pr ON pr.id = p.product_id
+        UNION ALL
+        SELECT
+          'sale',
+          s.id,
+          s.product_id,
+          pr.name,
+          s.quantity,
+          s.total,
+          s.unit_price,
+          NULL,
+          s.created_at,
+          NULL
+        FROM sales s
+        JOIN products pr ON pr.id = s.product_id
+        WHERE s.count_id IS NULL
+        UNION ALL
+        SELECT
+          'adjustment',
+          a.id,
+          a.product_id,
+          pr.name,
+          a.quantity_delta,
+          NULL,
+          a.unit_cost,
+          a.reason,
+          a.created_at,
+          NULL
+        FROM adjustments a
+        JOIN products pr ON pr.id = a.product_id
+        WHERE a.count_id IS NULL
+        UNION ALL
+        SELECT
+          'count',
+          c.id,
+          NULL,
+          'Conteo semanal',
+          c.units_sold,
+          c.total_sale,
+          NULL,
+          NULL,
+          c.created_at,
+          c.sale_lines + c.adjustment_lines
+        FROM counts c;
     `);
   },
 ];
@@ -265,7 +367,9 @@ async function resetDatabase(
   }
 
   await db.execAsync("PRAGMA user_version = 0;");
-  await migrations[0](db);
+  for (const migration of migrations) {
+    await migration(db);
+  }
 
   if (legacyColumns) {
     await db.execAsync(`

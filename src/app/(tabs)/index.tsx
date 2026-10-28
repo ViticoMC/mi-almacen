@@ -10,6 +10,7 @@ import type { DashboardActivity } from "@/database/repositories/dashboard.reposi
 import type { Product } from "@/database/types";
 import { formatDateTime } from "@/database/utils/dates";
 import { formatQuantity } from "@/database/utils/quantity";
+import { useLastCount } from "@/hooks/use-counts";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { usePalette } from "@/theme/colors";
 import { cn } from "@/utils/cn";
@@ -21,6 +22,7 @@ const activityStyles = {
   purchase: { icon: "cart-arrow-down", label: "Compra" },
   sale: { icon: "cash-register", label: "Venta" },
   adjustment: { icon: "swap-vertical", label: "Ajuste" },
+  count: { icon: "clipboard-check-outline", label: "Conteo" },
 } as const;
 
 function formatDelta(value: number): string {
@@ -34,27 +36,34 @@ function ActivityCard({ entry }: { entry: DashboardActivity }) {
   const meta = activityStyles[entry.type];
   const isAdjustment = entry.type === "adjustment";
   const isRemoval = isAdjustment && entry.quantity < 0;
+  const isCount = entry.type === "count";
   const color = isAdjustment
     ? isRemoval
       ? palette.danger
       : palette.success
-    : entry.type === "purchase"
-      ? palette.warning
-      : palette.success;
+    : isCount
+      ? palette.accent
+      : entry.type === "purchase"
+        ? palette.warning
+        : palette.success;
   const cardTone = isAdjustment
     ? isRemoval
       ? "border-danger-border bg-danger-soft"
       : "border-success/25 bg-success/10"
-    : entry.type === "purchase"
-      ? "border-warning/25 bg-warning/10"
-      : "border-success/25 bg-success/10";
+    : isCount
+      ? "border-accent/25 bg-accent-soft"
+      : entry.type === "purchase"
+        ? "border-warning/25 bg-warning/10"
+        : "border-success/25 bg-success/10";
   const badgeTone = isAdjustment
     ? isRemoval
       ? "danger"
       : "success"
-    : entry.type === "purchase"
-      ? "warning"
-      : "success";
+    : isCount
+      ? "success"
+      : entry.type === "purchase"
+        ? "warning"
+        : "success";
 
   return (
     <Card className={cn("gap-3", cardTone)}>
@@ -148,6 +157,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const palette = usePalette();
   const { stats, lowStock, activity, loading, error } = useDashboard();
+  const { count, loading: countLoading } = useLastCount();
 
   return (
     <Screen>
@@ -181,6 +191,51 @@ export default function HomeScreen() {
 
       {stats ? (
         <>
+          {!countLoading && count ? (
+            <Card className="gap-3 border-accent/25 bg-accent-soft">
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1 gap-1">
+                  <AppText variant="title">Último conteo</AppText>
+                  <AppText variant="muted">{formatDateTime(count.createdAt)}</AppText>
+                </View>
+                <Badge tone="success" label="Conteo" />
+              </View>
+
+              <View className="flex-row items-end justify-between gap-3">
+                <View className="gap-0.5">
+                  <AppText variant="caption">Venta conjunta</AppText>
+                  <MoneyText value={count.totalSale} className="font-semibold" />
+                </View>
+                <View className="items-end gap-0.5">
+                  <AppText variant="caption">Productos</AppText>
+                  <AppText className="font-semibold">{count.itemCount}</AppText>
+                </View>
+              </View>
+
+              <Button
+                label="Ver detalle"
+                variant="secondary"
+                size="sm"
+                onPress={() => router.push(`/count/${count.id}`)}
+              />
+            </Card>
+          ) : null}
+
+          {!countLoading && !count ? (
+            <Card className="gap-3">
+              <AppText variant="title">Conteo semanal</AppText>
+              <AppText variant="muted">
+                Aún no hay un conteo registrado. Haz el primero para ajustar stock y registrar la venta conjunta.
+              </AppText>
+              <Button
+                label="Nuevo conteo"
+                variant="secondary"
+                size="sm"
+                onPress={() => router.push("/count/new")}
+              />
+            </Card>
+          ) : null}
+
           <View className="flex-row gap-3">
             <Card className="flex-1 gap-1">
               <AppText variant="caption">Valor a costo</AppText>
